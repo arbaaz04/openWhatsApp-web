@@ -30,8 +30,10 @@ app.notFound((c) => {
 });
 
 import authRouter from './routes/auth.routes.js'
+import webhookRouter from './routes/webhook.routes.js'
 
 app.route('/api/auth', authRouter);
+app.route('/api/webhooks', webhookRouter);
 
 app.get('/', (c) => {
   return c.json({ success: true, message: 'Whatflow API Online' });
