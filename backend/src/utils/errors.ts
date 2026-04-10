@@ -46,7 +46,7 @@ export function formatErrorResponse(err: unknown): Record<string, any> {
       },
     };
   }
-  
+
   const error = err as Error;
   return {
     success: false,

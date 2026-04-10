@@ -1,4 +1,4 @@
-# Whatflow Web 
+# Whatflow Web
 
 Developer-first WhatsApp infrastructure aggregation layer bridging developers and the Meta WhatsApp Cloud API.
 
@@ -10,5 +10,6 @@ Developer-first WhatsApp infrastructure aggregation layer bridging developers an
 4. Run \`npm run dev\` to start both Vite (frontend) and Wrangler (backend).
 
 ## Architecture
+
 - **Frontend**: React (Vite) + Tailwind CSS + shadcn/ui.
 - **Backend**: Cloudflare Workers + Hono.js + Neon Postgres (Drizzle).

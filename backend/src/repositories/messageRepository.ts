@@ -10,7 +10,7 @@ export const messageRepository = {
    * 2. Finds or creates the conversation
    * 3. Opens the 24-hour service window
    * 4. Logs the message
-   * 
+   *
    * @param phoneNumberId - Phone Number ID from Meta webhook
    * @param customerNumber - The WhatsApp number of the customer who sent the message
    * @param body - Message text body
@@ -29,7 +29,7 @@ export const messageRepository = {
     }
 
     // 2. Resolve Conversation
-    let conversationRes = await db
+    const conversationRes = await db
       .select()
       .from(conversations)
       .where(eq(conversations.customerNumber, customerNumber))
@@ -38,20 +38,24 @@ export const messageRepository = {
     let conversationId: number;
 
     if (!conversationRes[0]) {
-      const inserted = await db.insert(conversations).values({
-        channelId: channel.id,
-        customerNumber,
-        lastCustomerMessageAt: new Date(),
-        isWindowOpen: true,
-      }).returning({ id: conversations.id });
+      const inserted = await db
+        .insert(conversations)
+        .values({
+          channelId: channel.id,
+          customerNumber,
+          lastCustomerMessageAt: new Date(),
+          isWindowOpen: true,
+        })
+        .returning({ id: conversations.id });
       conversationId = inserted[0].id;
     } else {
       conversationId = conversationRes[0].id;
       // 3. Open 24h Window
-      await db.update(conversations)
-        .set({ 
-          lastCustomerMessageAt: new Date(), 
-          isWindowOpen: true 
+      await db
+        .update(conversations)
+        .set({
+          lastCustomerMessageAt: new Date(),
+          isWindowOpen: true,
         })
         .where(eq(conversations.id, conversationId));
     }
@@ -63,5 +67,5 @@ export const messageRepository = {
       direction: 'incoming',
       status: 'delivered',
     });
-  }
+  },
 };

@@ -13,7 +13,7 @@ export const webhookService = {
     }
 
     const entries = payload.entry || [];
-    
+
     for (const entry of entries) {
       const changes = entry.changes || [];
       for (const change of changes) {
@@ -34,18 +34,24 @@ export const webhookService = {
 
             if (phoneNumberId && customerPhone && bodyText) {
               logger.info('Processing incoming message', { customerPhone, phoneNumberId });
-              
+
               try {
-                await messageRepository.processIncomingMessage(phoneNumberId, customerPhone, bodyText);
-                
+                await messageRepository.processIncomingMessage(
+                  phoneNumberId,
+                  customerPhone,
+                  bodyText
+                );
+
                 // Real-Time Broadcast to UI using Durable Objects
                 if (env && env.INBOX_SYNC) {
-                   const id = env.INBOX_SYNC.idFromName('default-inbox');
-                   const stub = env.INBOX_SYNC.get(id);
-                   await stub.fetch(new Request('http://internal/broadcast', { 
-                     method: 'POST', 
-                     body: JSON.stringify({ customerPhone, bodyText, timestamp: new Date() }) 
-                   }));
+                  const id = env.INBOX_SYNC.idFromName('default-inbox');
+                  const stub = env.INBOX_SYNC.get(id);
+                  await stub.fetch(
+                    new Request('http://internal/broadcast', {
+                      method: 'POST',
+                      body: JSON.stringify({ customerPhone, bodyText, timestamp: new Date() }),
+                    })
+                  );
                 }
               } catch (e: any) {
                 logger.error('Message repository insertion failed', { error: e.message });
@@ -55,5 +61,5 @@ export const webhookService = {
         }
       }
     }
-  }
+  },
 };

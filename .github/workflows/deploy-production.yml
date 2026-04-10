@@ -13,14 +13,14 @@ jobs:
         with:
           node-version: 18
       - run: npm ci
-      
+
       # Deploy Backend via Wrangler
       - name: Deploy Backend
         working-directory: ./backend
         run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          
+
       # Deploy Frontend via Pages
       - name: Build Frontend
         working-directory: ./frontend

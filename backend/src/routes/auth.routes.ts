@@ -54,17 +54,24 @@ authRouter.openapi(embeddedSignupRoute, async (c) => {
   try {
     // Phase 2 Logic: Retrieve long-lived token via Meta Graph API using the temporary `code`.
     // In a full implementation, we'd invoke the \`exchangeTokenService\` here.
-    
+
     // Abstracted Token Exchange Call
     // const tokenResponse = await exchangeTokenService(code, wabaId, phoneNumberId);
-    
+
     // Abstracted DB saving
     // await channelsRepository.createOrUpdateChannel({ wabaId, phoneNumberId, accessToken: tokenResponse.accessToken });
-    
-    return c.json({ success: true, message: 'WhatsApp account connection initiated. This may take a moment.' }, 200);
+
+    return c.json(
+      { success: true, message: 'WhatsApp account connection initiated. This may take a moment.' },
+      200
+    );
   } catch (error: any) {
     logger.error('Failed token exchange', { error: error.message, wabaId });
-    throw new ApiError(500, 'Failed to initiate WhatsApp account connection', 'TOKEN_EXCHANGE_FAILED');
+    throw new ApiError(
+      500,
+      'Failed to initiate WhatsApp account connection',
+      'TOKEN_EXCHANGE_FAILED'
+    );
   }
 });
 

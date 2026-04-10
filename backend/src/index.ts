@@ -1,17 +1,17 @@
-import { OpenAPIHono } from '@hono/zod-openapi'
-import { logger } from './utils/logger.js'
-import { ApiError, formatErrorResponse } from './utils/errors.js'
+import { OpenAPIHono } from '@hono/zod-openapi';
+import { logger } from './utils/logger.js';
+import { ApiError, formatErrorResponse } from './utils/errors.js';
 
 /**
  * Main application router incorporating OpenAPI auto-docs
  */
-const app = new OpenAPIHono()
+const app = new OpenAPIHono();
 
 // Basic Request Logging Middleware
 app.use('*', async (c, next) => {
-  logger.info('Incoming Request', { 
-    method: c.req.method, 
-    path: c.req.path 
+  logger.info('Incoming Request', {
+    method: c.req.method,
+    path: c.req.path,
   });
   await next();
 });
@@ -19,20 +19,23 @@ app.use('*', async (c, next) => {
 // Global Error Handler maintaining structured error response format
 app.onError((err, c) => {
   logger.error('Unhandled Exception', { error: err.message, stack: err.stack });
-  
+
   const statusCode = err instanceof ApiError ? err.statusCode : 500;
   return c.json(formatErrorResponse(err), statusCode as any);
 });
 
 // Global 404 Handler
 app.notFound((c) => {
-  return c.json(formatErrorResponse(new ApiError(404, 'Endpoint not found', 'NOT_FOUND')), 404 as any);
+  return c.json(
+    formatErrorResponse(new ApiError(404, 'Endpoint not found', 'NOT_FOUND')),
+    404 as any
+  );
 });
 
-import authRouter from './routes/auth.routes.js'
-import webhookRouter from './routes/webhook.routes.js'
-import wsRouter from './routes/ws.routes.js'
-import { swaggerUI } from '@hono/swagger-ui'
+import authRouter from './routes/auth.routes.js';
+import webhookRouter from './routes/webhook.routes.js';
+import wsRouter from './routes/ws.routes.js';
+import { swaggerUI } from '@hono/swagger-ui';
 
 app.route('/api/auth', authRouter);
 app.route('/api/webhooks', webhookRouter);
@@ -44,9 +47,9 @@ app.doc('/doc', {
     version: '1.0.0',
     title: 'Whatflow Kapso Clone API',
   },
-})
+});
 
-app.get('/ui', swaggerUI({ url: '/doc' }))
+app.get('/ui', swaggerUI({ url: '/doc' }));
 
 app.get('/', (c) => {
   return c.json({ success: true, message: 'Whatflow API Online' });

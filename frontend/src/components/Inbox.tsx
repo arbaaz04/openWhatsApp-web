@@ -18,7 +18,7 @@ export const Inbox: React.FC = () => {
     // Determine WS protocol based on environment
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = import.meta.env.VITE_API_URL?.replace(/^http(s)?:\/\//, '') || 'localhost:8787';
-    
+
     const ws = new WebSocket(`${protocol}//${host}/api/ws/inbox`);
 
     ws.onopen = () => {
@@ -51,10 +51,12 @@ export const Inbox: React.FC = () => {
         <h2 className="text-2xl font-bold text-gray-800">Live Inbox</h2>
         <div className="flex items-center space-x-2">
           <span className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-          <span className="text-sm text-gray-500">{isConnected ? 'Connected' : 'Disconnected'}</span>
+          <span className="text-sm text-gray-500">
+            {isConnected ? 'Connected' : 'Disconnected'}
+          </span>
         </div>
       </div>
-      
+
       <div className="space-y-4 max-h-96 overflow-y-auto w-full">
         {messages.length === 0 ? (
           <p className="text-gray-500 text-center py-8">Waiting for incoming messages...</p>
@@ -63,7 +65,9 @@ export const Inbox: React.FC = () => {
             <div key={idx} className="bg-gray-50 p-4 rounded-xl shadow-sm border border-gray-100">
               <div className="flex justify-between items-center mb-2">
                 <span className="font-semibold">{msg.customerPhone}</span>
-                <span className="text-xs text-gray-400">{new Date(msg.timestamp).toLocaleTimeString()}</span>
+                <span className="text-xs text-gray-400">
+                  {new Date(msg.timestamp).toLocaleTimeString()}
+                </span>
               </div>
               <p className="text-gray-700">{msg.bodyText}</p>
             </div>

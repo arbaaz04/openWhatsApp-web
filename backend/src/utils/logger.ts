@@ -10,14 +10,14 @@
  */
 function log(level: string, message: string, context?: Record<string, any>) {
   if (process.env.NODE_ENV === 'test' && level !== 'ERROR') return;
-  
+
   const payload = {
     timestamp: new Date().toISOString(),
     level,
     message,
     ...context,
   };
-  
+
   if (level === 'ERROR') {
     console.error(JSON.stringify(payload));
   } else if (level === 'WARN') {
