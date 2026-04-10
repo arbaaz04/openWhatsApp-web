@@ -1,8 +1,8 @@
 {
-  "name": "whatflow",
+  "name": "whatflow-web",
   "version": "1.0.0",
   "private": true,
-  "description": "Developer-First WhatsApp Infrastructure",
+  "description": "WhatFlow Web - Developer-First WhatsApp Infrastructure",
   "workspaces": [
     "frontend",
     "backend"

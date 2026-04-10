@@ -26,7 +26,7 @@ webhookRouter.get('/', (c) => {
 /**
  * Zod Payload definitions for strict Meta POST Requests
  */
-const fallbackSchema = z.record(z.any());
+const fallbackSchema = z.record(z.string(), z.any());
 
 /**
  * Receives Webhook events from Meta (messages, templates, etc.)
