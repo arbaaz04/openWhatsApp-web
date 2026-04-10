@@ -11,17 +11,18 @@
     "test": "vitest"
   },
   "dependencies": {
-    "hono": "^4.0.0",
+    "@hono/zod-openapi": "latest",
+    "@neondatabase/serverless": "^1.0.2",
     "drizzle-orm": "^0.30.0",
+    "hono": "^4.0.0",
     "postgres": "^3.4.4",
-    "zod": "latest",
-    "@hono/zod-openapi": "latest"
+    "zod": "latest"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240909.0",
-    "wrangler": "^3.78.0",
+    "eslint": "^9.0.0",
     "typescript": "^5.5.0",
     "vitest": "^2.1.0",
-    "eslint": "^9.0.0"
+    "wrangler": "^3.78.0"
   }
 }
