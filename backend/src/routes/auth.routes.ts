@@ -49,7 +49,7 @@ const embeddedSignupRoute = createRoute({
 authRouter.openapi(embeddedSignupRoute, async (c) => {
   const { code, wabaId, phoneNumberId } = c.req.valid('json');
 
-  logger.info('Embedded signup callback received', { wabaId, phoneNumberId });
+  logger.info('Embedded signup callback received', { code, wabaId, phoneNumberId });
 
   try {
     // Phase 2 Logic: Retrieve long-lived token via Meta Graph API using the temporary `code`.

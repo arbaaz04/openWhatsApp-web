@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 
 declare global {
   interface Window {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     FB: any;
     fbAsyncInit: () => void;
   }
@@ -24,12 +25,11 @@ export const MetaSignupButton: React.FC = () => {
     };
 
     (function (d, s, id) {
-      let js,
-        fjs = d.getElementsByTagName(s)[0];
+      const fjs = d.getElementsByTagName(s)[0];
       if (d.getElementById(id)) {
         return;
       }
-      js = d.createElement(s) as HTMLScriptElement;
+      const js = d.createElement(s) as HTMLScriptElement;
       js.id = id;
       js.src = 'https://connect.facebook.net/en_US/sdk.js';
       fjs.parentNode?.insertBefore(js, fjs);
@@ -41,11 +41,10 @@ export const MetaSignupButton: React.FC = () => {
 
     // Launch the Oauth popup
     window.FB.login(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (response: any) => {
         if (response.authResponse) {
           const code = response.authResponse.code;
-          // In real implementation: Extract wabaId and phoneNumberId from the success payload
-          // and send it to our backend POST /api/auth/embedded-signup
           exchangeToken(code, 'sample-waba', 'sample-phone-id');
         } else {
           console.error('User cancelled login or did not fully authorize.');

@@ -2,7 +2,7 @@ export class InboxSync {
   state: DurableObjectState;
   sessions: Set<WebSocket>;
 
-  constructor(state: DurableObjectState, env: any) {
+  constructor(state: DurableObjectState) {
     this.state = state;
     this.sessions = new Set();
   }
@@ -17,7 +17,7 @@ export class InboxSync {
     this.sessions.add(server);
     server.accept();
 
-    server.addEventListener('message', (event) => {
+    server.addEventListener('message', () => {
       // In a broader implementation, handle client events (typing indicators, read receipts, etc.)
     });
 
@@ -38,7 +38,7 @@ export class InboxSync {
     for (const session of this.sessions) {
       try {
         session.send(messagePayload);
-      } catch (err) {
+      } catch {
         this.sessions.delete(session);
       }
     }
