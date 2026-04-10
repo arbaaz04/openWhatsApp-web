@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { logger } from '../utils/logger.js';
+import type { WorkerBindings } from '../types/bindings.js';
 
-const wsRouter = new Hono<{ Bindings: { INBOX_SYNC: DurableObjectNamespace } }>();
+const wsRouter = new Hono<{ Bindings: WorkerBindings }>();
 
 /**
  * WebSocket handshake endpoint.

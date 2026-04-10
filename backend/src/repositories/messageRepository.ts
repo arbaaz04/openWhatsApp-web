@@ -78,8 +78,8 @@ export const messageRepository = {
     await db.insert(messages).values({
       conversationId,
       body,
-      direction: 'incoming',
-      status: 'delivered',
+      direction: 'incoming' as const,
+      status: 'delivered' as const,
     });
   },
 };

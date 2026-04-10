@@ -1,11 +1,11 @@
 import { neon } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-http';
+import { drizzle, type NeonHttpDatabase } from 'drizzle-orm/neon-http';
 import * as schema from './schema.js';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-export type DrizzleDb = ReturnType<typeof createDb>;
+export type DrizzleDb = NeonHttpDatabase<typeof schema>;
 
 // ---------------------------------------------------------------------------
 // Factory — pure function, no side effects at module load time.

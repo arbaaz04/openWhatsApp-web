@@ -1,7 +1,8 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
-import { logger } from './utils/logger.js';
+import { createLogger, logger } from './utils/logger.js';
 import { ApiError, formatErrorResponse } from './utils/errors.js';
 import { createDb, setDb } from './db/index.js';
+import { validateEnv } from './utils/validateEnv.js';
 import { swaggerUI } from '@hono/swagger-ui';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { WorkerBindings } from './types/bindings.js';
@@ -10,15 +11,36 @@ import authRouter from './routes/auth.routes.js';
 import webhookRouter from './routes/webhook.routes.js';
 import wsRouter from './routes/ws.routes.js';
 
-const app = new OpenAPIHono<{ Bindings: WorkerBindings }>();
+// ---------------------------------------------------------------------------
+// Hono type extensions
+// ---------------------------------------------------------------------------
+type Variables = {
+  requestId: string;
+};
 
-// Request logging
+const app = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>();
+
+// ---------------------------------------------------------------------------
+// Middleware — runs in order on every request
+// ---------------------------------------------------------------------------
+
+// 1. Assign a unique ID to this request for log correlation
 app.use('*', async (c, next) => {
-  logger.info('Incoming Request', { method: c.req.method, path: c.req.path });
+  const requestId = crypto.randomUUID();
+  c.set('requestId', requestId);
   await next();
 });
 
-// DB initialisation — guards against missing binding so app.fetch() works in tests
+// 2. Validate all required bindings are present — fail fast with 503
+app.use('*', async (c, next) => {
+  if (c.env?.DATABASE_URL) {
+    // Only validate when env is present (skips test env where app.fetch has no env)
+    validateEnv(c.env);
+  }
+  await next();
+});
+
+// 3. DB initialisation — safe to call on every request (Proxy is idempotent)
 app.use('*', async (c, next) => {
   if (c.env?.DATABASE_URL) {
     setDb(createDb(c.env.DATABASE_URL));
@@ -26,14 +48,27 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// Global error handler
+// 4. Structured request logging with correlation ID
+app.use('*', async (c, next) => {
+  const log = createLogger({ requestId: c.get('requestId') });
+  log.info('Incoming Request', { method: c.req.method, path: c.req.path });
+  await next();
+});
+
+// ---------------------------------------------------------------------------
+// Error handlers
+// ---------------------------------------------------------------------------
 app.onError((err, c) => {
-  logger.error('Unhandled Exception', { error: err.message, stack: err.stack });
+  const requestId = c.get('requestId');
+  logger.error('Unhandled Exception', {
+    requestId,
+    error: err.message,
+    stack: err.stack,
+  });
   const statusCode = err instanceof ApiError ? err.statusCode : 500;
   return c.json(formatErrorResponse(err), statusCode as ContentfulStatusCode);
 });
 
-// 404 handler
 app.notFound((c) =>
   c.json(
     formatErrorResponse(new ApiError(404, 'Endpoint not found', 'NOT_FOUND')),
@@ -41,6 +76,9 @@ app.notFound((c) =>
   )
 );
 
+// ---------------------------------------------------------------------------
+// Routes
+// ---------------------------------------------------------------------------
 app.route('/api/auth', authRouter);
 app.route('/api/webhooks', webhookRouter);
 app.route('/api/ws', wsRouter);

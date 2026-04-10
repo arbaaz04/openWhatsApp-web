@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { logger } from '../utils/logger.js';
+import { logger, createLogger } from '../utils/logger.js';
 import { ApiError, formatErrorResponse } from '../utils/errors.js';
 import { rateLimiter } from '../utils/rateLimiter.js';
+import { validateEnv } from '../utils/validateEnv.js';
+import type { WorkerBindings } from '../types/bindings.js';
 
 describe('Utils Suite', () => {
   describe('ApiError + formatErrorResponse', () => {
@@ -88,6 +90,66 @@ describe('Utils Suite', () => {
       const next = vi.fn();
 
       await expect(middleware(c, next)).rejects.toMatchObject({ statusCode: 429 });
+    });
+  });
+
+  describe('createLogger — request-scoped context', () => {
+    it('should merge base context into every log call', () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const log = createLogger({ requestId: 'test-req-123' });
+      log.error('Something broke', { detail: 'disk full' });
+
+      const logged = JSON.parse(spy.mock.calls[0][0] as string);
+      expect(logged.requestId).toBe('test-req-123');
+      expect(logged.detail).toBe('disk full');
+      expect(logged.message).toBe('Something broke');
+      spy.mockRestore();
+    });
+
+    it('should not bleed context between separate logger instances', () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const logA = createLogger({ requestId: 'req-A' });
+      const logB = createLogger({ requestId: 'req-B' });
+
+      logA.error('from A');
+      logB.error('from B');
+
+      const payloadA = JSON.parse(spy.mock.calls[0][0] as string);
+      const payloadB = JSON.parse(spy.mock.calls[1][0] as string);
+
+      expect(payloadA.requestId).toBe('req-A');
+      expect(payloadB.requestId).toBe('req-B');
+      spy.mockRestore();
+    });
+  });
+
+  describe('validateEnv', () => {
+    const validEnv: WorkerBindings = {
+      DATABASE_URL: 'postgres://localhost/test',
+      WEBHOOK_VERIFY_TOKEN: 'secret',
+      META_APP_ID: 'app123',
+      META_APP_SECRET: 'appsecret',
+      INBOX_SYNC: {} as DurableObjectNamespace,
+    };
+
+    it('should not throw when all required bindings are present', () => {
+      expect(() => validateEnv(validEnv)).not.toThrow();
+    });
+
+    it('should throw ApiError 503 when DATABASE_URL is missing', () => {
+      const env = { ...validEnv, DATABASE_URL: '' };
+      expect(() => validateEnv(env)).toThrow(
+        expect.objectContaining({ statusCode: 503, code: 'MISCONFIGURED' })
+      );
+    });
+
+    it('should list all missing bindings in the error message', () => {
+      const env = { ...validEnv, META_APP_ID: '', META_APP_SECRET: '' };
+      expect(() => validateEnv(env)).toThrow(
+        expect.objectContaining({
+          message: expect.stringContaining('META_APP_ID'),
+        })
+      );
     });
   });
 });

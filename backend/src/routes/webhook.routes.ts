@@ -1,29 +1,32 @@
 import { OpenAPIHono, createRoute } from '@hono/zod-openapi';
 import { z } from 'zod';
 import { webhookService } from '../services/webhookService.js';
-import { logger } from '../utils/logger.js';
+import { createLogger } from '../utils/logger.js';
 import { MetaWebhookPayloadSchema } from '../types/webhook.types.js';
 import type { WorkerBindings } from '../types/bindings.js';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
-const webhookRouter = new OpenAPIHono<{ Bindings: WorkerBindings }>();
+type Variables = { requestId: string };
+
+const webhookRouter = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>();
 
 // ---------------------------------------------------------------------------
 // GET /api/webhooks — Meta webhook verification handshake
 // ---------------------------------------------------------------------------
 webhookRouter.get('/', (c) => {
+  const log = createLogger({ requestId: c.get('requestId') });
   const mode = c.req.query('hub.mode');
   const token = c.req.query('hub.verify_token');
   const challenge = c.req.query('hub.challenge');
 
-  // Read from typed Cloudflare env binding — not process.env
   const expectedToken = c.env.WEBHOOK_VERIFY_TOKEN;
 
   if (mode === 'subscribe' && token === expectedToken) {
-    logger.info('Webhook verified by Meta');
+    log.info('Webhook verified by Meta');
     return c.text(challenge ?? '');
   }
 
-  logger.error('Webhook verification failed', { providedToken: token });
+  log.error('Webhook verification failed', { providedToken: token });
   return c.text('Forbidden', 403 as ContentfulStatusCode);
 });
 
@@ -36,9 +39,7 @@ const webhookPostRoute = createRoute({
   request: {
     body: {
       content: {
-        'application/json': {
-          schema: MetaWebhookPayloadSchema,
-        },
+        'application/json': { schema: MetaWebhookPayloadSchema },
       },
     },
   },
@@ -46,18 +47,18 @@ const webhookPostRoute = createRoute({
     200: {
       description: 'Webhook received and queued for processing',
       content: {
-        'application/json': {
-          schema: z.object({ success: z.boolean() }),
-        },
+        'application/json': { schema: z.object({ success: z.boolean() }) },
       },
     },
   },
 });
 
 webhookRouter.openapi(webhookPostRoute, async (c) => {
+  const log = createLogger({ requestId: c.get('requestId') });
   const payload = c.req.valid('json');
 
-  // Ack immediately; let the runtime keep the isolate alive for background work
+  log.info('Webhook payload received', { object: payload.object, entries: payload.entry.length });
+
   c.executionCtx.waitUntil(
     webhookService.processPayload(payload, c.env)
   );

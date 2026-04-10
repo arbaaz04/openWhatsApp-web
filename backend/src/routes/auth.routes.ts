@@ -1,11 +1,13 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { ApiError } from '../utils/errors.js';
-import { logger } from '../utils/logger.js';
+import { createLogger } from '../utils/logger.js';
 import { rateLimiter } from '../utils/rateLimiter.js';
 import { authService } from '../services/authService.js';
 import type { WorkerBindings } from '../types/bindings.js';
 
-const authRouter = new OpenAPIHono<{ Bindings: WorkerBindings }>();
+type Variables = { requestId: string };
+
+const authRouter = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>();
 
 /**
  * Validates the embedded signup callback body from the Meta JS SDK.
@@ -40,11 +42,11 @@ const embeddedSignupRoute = createRoute({
 });
 
 authRouter.openapi(embeddedSignupRoute, async (c) => {
+  const log = createLogger({ requestId: c.get('requestId') });
   const { code, wabaId, phoneNumberId } = c.req.valid('json');
 
-  logger.info('Embedded signup callback received', { wabaId, phoneNumberId });
+  log.info('Embedded signup callback received', { wabaId, phoneNumberId });
 
-  // Credentials read from typed bindings — no process.env, no casting
   const { META_APP_ID: clientId, META_APP_SECRET: clientSecret } = c.env;
 
   if (!clientId || !clientSecret) {
@@ -56,6 +58,8 @@ authRouter.openapi(embeddedSignupRoute, async (c) => {
   }
 
   await authService.exchangeToken(code, wabaId, phoneNumberId, clientId, clientSecret);
+
+  log.info('Channel connected successfully', { wabaId, phoneNumberId });
 
   return c.json(
     { success: true, message: 'WhatsApp channel connected successfully.' },

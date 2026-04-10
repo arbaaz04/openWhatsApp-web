@@ -70,7 +70,7 @@ describe('API Route Integrations', () => {
       body: JSON.stringify(payload),
     });
 
-    const ctx = { waitUntil: vi.fn(), passThroughOnException: vi.fn() };
+    const ctx = { waitUntil: vi.fn(), passThroughOnException: vi.fn() } as unknown as ExecutionContext;
     const res = await webhookRouter.fetch(req, {}, ctx);
 
     expect(res.status).toBe(200);
