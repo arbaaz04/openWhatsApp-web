@@ -8,7 +8,7 @@
     "dev": "wrangler dev src/index.ts",
     "deploy": "wrangler deploy --minify src/index.ts",
     "lint": "eslint \"src/**/*.ts\"",
-    "test": "vitest"
+    "test": "vitest run"
   },
   "dependencies": {
     "@hono/swagger-ui": "^0.6.1",
