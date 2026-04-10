@@ -10,8 +10,8 @@ import { InboxSync } from '../durable_objects/InboxSync.js';
   }
 };
 
-/** Build a minimal DurableObjectState stub with Hibernation API support */
-function makeState(sockets: WebSocket[] = []) {
+/** Build a DurableObjectState stub with Hibernation API support */
+function makeState(sockets: { send: ReturnType<typeof vi.fn> }[] = []) {
   return {
     acceptWebSocket: vi.fn(),
     getWebSockets: vi.fn().mockReturnValue(sockets),
@@ -19,12 +19,7 @@ function makeState(sockets: WebSocket[] = []) {
 }
 
 describe('InboxSync Durable Object', () => {
-  it('initialises with an empty local sessions set', () => {
-    const doObj = new InboxSync(makeState());
-    expect(doObj.sessions.size).toBe(0);
-  });
-
-  it('returns 426 for plain HTTP requests (not websocket upgrades)', async () => {
+  it('returns 426 for non-websocket upgrade requests', async () => {
     const doObj = new InboxSync(makeState());
     const res = await doObj.fetch(new Request('http://localhost/'));
     expect(res.status).toBe(426);
@@ -45,15 +40,15 @@ describe('InboxSync Durable Object', () => {
     expect(state.acceptWebSocket).toHaveBeenCalledOnce();
   });
 
-  it('broadcasts a POST payload to all runtime-hydrated sessions', async () => {
+  it('broadcasts POST payload to all runtime-hydrated sessions', async () => {
     const session1 = { send: vi.fn() };
     const session2 = { send: vi.fn() };
-    const state = makeState([session1, session2] as unknown as WebSocket[]);
+    const state = makeState([session1, session2]);
     const doObj = new InboxSync(state);
 
     const req = new Request('http://internal/broadcast', {
       method: 'POST',
-      body: JSON.stringify({ message: 'new message' }),
+      body: JSON.stringify({ customerPhone: '123', bodyText: 'hi' }),
     });
 
     const res = await doObj.fetch(req);
@@ -63,33 +58,29 @@ describe('InboxSync Durable Object', () => {
     expect(session2.send).toHaveBeenCalledOnce();
   });
 
-  it('evicts a session from the local Set when send throws', async () => {
+  it('silently skips stale sessions that throw on send', async () => {
     const goodSession = { send: vi.fn() };
     const badSession = {
       send: vi.fn().mockImplementation(() => { throw new Error('Connection reset'); }),
     };
 
-    const state = makeState([goodSession, badSession] as unknown as WebSocket[]);
+    const state = makeState([goodSession, badSession]);
     const doObj = new InboxSync(state);
-    // Inject bad session into local set to test eviction path
-    doObj.sessions.add(badSession as unknown as WebSocket);
 
-    await doObj.fetch(new Request('http://internal/broadcast', { method: 'POST', body: '{}' }));
+    const req = new Request('http://internal/broadcast', { method: 'POST', body: '{}' });
 
-    // badSession evicted from local set; goodSession unaffected
-    expect(doObj.sessions.has(badSession as unknown as WebSocket)).toBe(false);
+    // Should not throw — stale socket errors are swallowed
+    await expect(doObj.fetch(req)).resolves.not.toThrow();
+    expect(goodSession.send).toHaveBeenCalledOnce();
   });
 
-  it('no-ops on webSocketMessage (reserved for future events)', () => {
+  it('does not throw on webSocketMessage (reserved for future events)', () => {
     const doObj = new InboxSync(makeState());
     expect(() => doObj.webSocketMessage({} as WebSocket, 'ping')).not.toThrow();
   });
 
-  it('removes a socket from the local set on webSocketClose', () => {
+  it('does not throw on webSocketClose (runtime handles cleanup)', () => {
     const doObj = new InboxSync(makeState());
-    const ws = {} as WebSocket;
-    doObj.sessions.add(ws);
-    doObj.webSocketClose(ws);
-    expect(doObj.sessions.has(ws)).toBe(false);
+    expect(() => doObj.webSocketClose({} as WebSocket)).not.toThrow();
   });
 });

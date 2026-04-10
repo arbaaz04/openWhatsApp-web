@@ -2,37 +2,27 @@
  * InboxSync — Cloudflare Durable Object
  *
  * Manages real-time WebSocket connections for a single WhatsApp channel inbox.
- * One DO instance per channel (keyed by phoneNumberId in webhookService.ts).
+ * One DO instance per channel, keyed by phoneNumberId.
  *
- * Uses the Cloudflare WebSocket Hibernation API (ctx.acceptWebSocket) instead
- * of the legacy manual `server.accept()` approach. Hibernation allows the
- * runtime to evict idle DO instances from memory and restore them on the next
- * event, which is essential for cost efficiency and long-lived connections.
+ * Uses the Cloudflare WebSocket Hibernation API exclusively:
+ * - `ctx.acceptWebSocket(server)` replaces the legacy `server.accept()`.
+ * - `ctx.getWebSockets()` replaces any local in-memory session tracking.
+ * - The DO can hibernate between events with zero connection loss.
  *
- * Key properties of this design:
- * - Sessions survive DO hibernation — `ctx.getWebSockets()` re-hydrates them.
- * - The `sessions` Set is rebuilt from the runtime on every wake, not persisted.
- * - Broadcast targets all sockets attached to this DO instance (one inbox).
+ * Compatibility requirement: Workers compatibility_date >= 2023-12-01
+ * (Hibernation API is stable since then).
  */
 export class InboxSync {
   private readonly ctx: DurableObjectState;
 
-  /**
-   * sessions is intentionally not a persistent field.
-   * It is a live view of currently attached WebSockets provided by the CF runtime.
-   * Stored as a public Set for test compatibility (tests inject mock sockets directly).
-   */
-  sessions: Set<WebSocket>;
-
   constructor(ctx: DurableObjectState) {
     this.ctx = ctx;
-    this.sessions = new Set();
   }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
-    // Internal RPC from webhookService — broadcast a received message to all UIs
+    // Internal RPC from webhookService — push a received message to all UIs
     if (request.method === 'POST' && url.pathname.endsWith('/broadcast')) {
       const payload = await request.text();
       await this.broadcast(payload);
@@ -43,8 +33,8 @@ export class InboxSync {
       return new Response('Expected Upgrade: websocket', { status: 426 });
     }
 
-    // Use the Hibernation API: the runtime manages the WebSocket lifecycle.
-    // The DO can be evicted and woken up later without losing the connection.
+    // Hibernation API — the CF runtime owns and tracks this WebSocket.
+    // Sessions survive isolate eviction and are re-hydrated by ctx.getWebSockets().
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
 
@@ -54,39 +44,35 @@ export class InboxSync {
   }
 
   /**
-   * Hibernation event handler — called when a client sends a message.
-   * Used for future features: typing indicators, read receipts, etc.
+   * Hibernation event handler — called when a connected client sends a message.
+   * Reserved for future client-to-server events (typing indicators, read receipts).
    */
   webSocketMessage(_ws: WebSocket, _message: string | ArrayBuffer): void {
-    // Reserved for client-to-server events (e.g. read receipts)
+    // intentionally empty — client-to-server events not yet implemented
   }
 
   /**
-   * Hibernation event handler — called when a client disconnects.
-   * The runtime handles cleanup; we remove from our local Set if present.
+   * Hibernation event handler — called when a client disconnects cleanly.
+   * The CF runtime already removes the socket from getWebSockets(); this is a hook
+   * for any cleanup work we may need later (metrics, presence updates, etc.).
    */
-  webSocketClose(ws: WebSocket): void {
-    this.sessions.delete(ws);
+  webSocketClose(_ws: WebSocket): void {
+    // intentionally empty — runtime handles cleanup
   }
 
   /**
-   * Broadcasts a JSON payload to all active WebSocket sessions on this inbox.
-   * Stale sessions that fail to receive are evicted silently.
-   *
-   * @param payload - JSON string to broadcast (typically a message event)
+   * Broadcasts a JSON payload to all sessions attached to this DO instance.
+   * Stale sockets that throw on send are silently skipped — the runtime will
+   * remove them from getWebSockets() on the next call automatically.
    */
   async broadcast(payload: string): Promise<void> {
-    // Re-hydrate sessions from the CF runtime (covers hibernated connections)
-    const activeSessions = this.ctx.getWebSockets
-      ? this.ctx.getWebSockets()
-      : [...this.sessions];
+    const activeSessions = this.ctx.getWebSockets();
 
     for (const ws of activeSessions) {
       try {
         ws.send(payload);
       } catch {
-        // Session is stale — remove from local set (runtime handles hibernated ones)
-        this.sessions.delete(ws);
+        // Send failed — socket is stale. CF runtime evicts it; we do nothing.
       }
     }
   }

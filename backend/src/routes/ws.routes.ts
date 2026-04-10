@@ -1,26 +1,47 @@
 import { Hono } from 'hono';
-import { logger } from '../utils/logger.js';
+import { createLogger } from '../utils/logger.js';
+import { ApiError } from '../utils/errors.js';
 import type { WorkerBindings } from '../types/bindings.js';
 
-const wsRouter = new Hono<{ Bindings: WorkerBindings }>();
+type Variables = { requestId: string };
+
+const wsRouter = new Hono<{ Bindings: WorkerBindings; Variables: Variables }>();
 
 /**
- * WebSocket handshake endpoint.
- * Upgrades the connection and hands it over to the InboxSync Durable Object.
+ * WebSocket handshake for a specific channel inbox.
+ *
+ * Requires `?phoneNumberId=<id>` — this is the key used to look up the
+ * InboxSync Durable Object instance. It must match the phoneNumberId from
+ * the Meta webhook metadata, which is the same key webhookService uses when
+ * broadcasting incoming messages. Without this, clients would connect to a
+ * different DO instance and never receive anything.
+ *
+ * @example ws://api/ws/inbox?phoneNumberId=1234567890
  */
 wsRouter.get('/inbox', async (c) => {
-  const upgradeHeader = c.req.header('Upgrade');
-  if (upgradeHeader !== 'websocket') {
+  const log = createLogger({ requestId: c.get('requestId') });
+
+  if (c.req.header('Upgrade') !== 'websocket') {
     return c.text('Expected Upgrade: websocket', 426);
   }
 
-  // Use a singleton instance of the DO for the current WABA/Channel if we want scoping.
-  // For standard Kapso multi-tenant clones, we derive the DO ID from the channel ID.
-  // For now, we will use a global 'default' inbox.
-  const id = c.env.INBOX_SYNC.idFromName('default-inbox');
+  const phoneNumberId = c.req.query('phoneNumberId');
+  if (!phoneNumberId) {
+    throw new ApiError(
+      400,
+      'phoneNumberId query parameter is required to connect to the correct inbox',
+      'MISSING_PHONE_NUMBER_ID'
+    );
+  }
+
+  // Key must match what webhookService uses: INBOX_SYNC.idFromName(phoneNumberId)
+  // Using any other key (e.g. 'default-inbox') would silently connect the client
+  // to a DO instance that receives no broadcasts.
+  const id = c.env.INBOX_SYNC.idFromName(phoneNumberId);
   const stub = c.env.INBOX_SYNC.get(id);
 
-  logger.info('Upgrading WebSocket connection to Durable Object');
+  log.info('Upgrading WebSocket connection', { phoneNumberId });
+
   return stub.fetch(c.req.raw);
 });
 
