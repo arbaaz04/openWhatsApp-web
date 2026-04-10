@@ -1,4 +1,4 @@
-# Whatflow (Kapso Clone)
+# Whatflow Web 
 
 Developer-first WhatsApp infrastructure aggregation layer bridging developers and the Meta WhatsApp Cloud API.
 

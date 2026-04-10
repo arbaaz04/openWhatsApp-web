@@ -21,13 +21,17 @@ app.onError((err, c) => {
   logger.error('Unhandled Exception', { error: err.message, stack: err.stack });
   
   const statusCode = err instanceof ApiError ? err.statusCode : 500;
-  return c.json(formatErrorResponse(err), statusCode);
+  return c.json(formatErrorResponse(err), statusCode as any);
 });
 
 // Global 404 Handler
 app.notFound((c) => {
-  return c.json(formatErrorResponse(new ApiError(404, 'Endpoint not found', 'NOT_FOUND')), 404);
+  return c.json(formatErrorResponse(new ApiError(404, 'Endpoint not found', 'NOT_FOUND')), 404 as any);
 });
+
+import authRouter from './routes/auth.routes.js'
+
+app.route('/api/auth', authRouter);
 
 app.get('/', (c) => {
   return c.json({ success: true, message: 'Whatflow API Online' });
