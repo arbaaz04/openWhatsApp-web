@@ -8,6 +8,13 @@ export class InboxSync {
   }
 
   async fetch(request: Request) {
+    const url = new URL(request.url);
+    if (request.method === 'POST' && url.pathname.endsWith('/broadcast')) {
+      const payload = await request.text();
+      await this.broadcast(payload);
+      return new Response('OK', { status: 200 });
+    }
+
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('Expected Upgrade: websocket', { status: 426 });
     }
