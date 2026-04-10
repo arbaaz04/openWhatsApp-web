@@ -17,4 +17,8 @@ export interface WorkerBindings {
   RATE_LIMITER?: {
     limit(options: { key: string }): Promise<{ success: boolean }>;
   };
+  // Optional telemetry sink — set these to forward ERROR/WARN logs externally
+  // (e.g. Axiom, Baselime, or any HTTP ingest endpoint)
+  TELEMETRY_URL?: string;
+  TELEMETRY_TOKEN?: string;
 }

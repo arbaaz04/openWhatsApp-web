@@ -1,5 +1,5 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
-import { createLogger, logger } from './utils/logger.js';
+import { createLogger, logger, setTelemetrySink } from './utils/logger.js';
 import { ApiError, formatErrorResponse } from './utils/errors.js';
 import { createDb, setDb } from './db/index.js';
 import { validateEnv } from './utils/validateEnv.js';
@@ -31,7 +31,15 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// 2. Validate all required bindings are present — fail fast with 503
+// 2. Configure telemetry sink if bindings are present (fire-and-forget for ERROR/WARN)
+app.use('*', async (c, next) => {
+  if (c.env?.TELEMETRY_URL && c.env?.TELEMETRY_TOKEN) {
+    setTelemetrySink(c.env.TELEMETRY_URL, c.env.TELEMETRY_TOKEN);
+  }
+  await next();
+});
+
+// 3. Validate all required bindings are present — fail fast with 503
 app.use('*', async (c, next) => {
   if (c.env?.DATABASE_URL) {
     // Only validate when env is present (skips test env where app.fetch has no env)

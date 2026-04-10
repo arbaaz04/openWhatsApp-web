@@ -8,7 +8,10 @@
     "dev": "wrangler dev src/index.ts",
     "deploy": "wrangler deploy --minify src/index.ts",
     "lint": "eslint \"src/**/*.ts\" --ignore-pattern \"src/__tests__/**\"",
-    "test": "vitest run --reporter=verbose"
+    "test": "vitest run --reporter=verbose",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push"
   },
   "vitest": {
     "include": ["src/__tests__/**/*.test.ts"],
