@@ -31,12 +31,15 @@ app.notFound((c) => {
 
 import authRouter from './routes/auth.routes.js'
 import webhookRouter from './routes/webhook.routes.js'
+import wsRouter from './routes/ws.routes.js'
 
 app.route('/api/auth', authRouter);
 app.route('/api/webhooks', webhookRouter);
+app.route('/api/ws', wsRouter);
 
 app.get('/', (c) => {
   return c.json({ success: true, message: 'Whatflow API Online' });
 });
 
-export default app
+export { InboxSync } from './durable_objects/InboxSync.js';
+export default app;

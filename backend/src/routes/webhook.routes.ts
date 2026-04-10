@@ -48,7 +48,7 @@ webhookRouter.openapi(webhookPostRoute, async (c) => {
   try {
     const payload = c.req.valid('json');
     // Using un-awaited background processing strategy to return 200 OK fast
-    c.executionCtx.waitUntil(webhookService.processPayload(payload));
+    c.executionCtx.waitUntil(webhookService.processPayload(payload, c.env));
   } catch (error) {
     logger.error('Webhook payload parsing error', { error });
   }

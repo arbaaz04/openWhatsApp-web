@@ -1,5 +1,19 @@
 {
   "name": "whatflow-backend",
   "main": "src/index.ts",
-  "compatibility_date": "2024-04-10"
+  "compatibility_date": "2024-04-10",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "INBOX_SYNC",
+        "class_name": "InboxSync"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["InboxSync"]
+    }
+  ]
 }

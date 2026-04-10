@@ -6,7 +6,7 @@ import { logger } from '../utils/logger.js';
  * Maps the deeply nested payload to the actual DB repository functions.
  */
 export const webhookService = {
-  async processPayload(payload: any) {
+  async processPayload(payload: any, env?: any) {
     if (payload.object !== 'whatsapp_business_account') {
       logger.debug('Ignored non-whatsapp webhook payload');
       return;
@@ -26,7 +26,6 @@ export const webhookService = {
             const customerPhone = msg.from;
             let bodyText = '';
 
-            // Handle Text messages
             if (msg.type === 'text') {
               bodyText = msg.text?.body || '';
             } else if (msg.type === 'button') {
@@ -38,6 +37,16 @@ export const webhookService = {
               
               try {
                 await messageRepository.processIncomingMessage(phoneNumberId, customerPhone, bodyText);
+                
+                // Real-Time Broadcast to UI using Durable Objects
+                if (env && env.INBOX_SYNC) {
+                   const id = env.INBOX_SYNC.idFromName('default-inbox');
+                   const stub = env.INBOX_SYNC.get(id);
+                   await stub.fetch(new Request('http://internal/broadcast', { 
+                     method: 'POST', 
+                     body: JSON.stringify({ customerPhone, bodyText, timestamp: new Date() }) 
+                   }));
+                }
               } catch (e: any) {
                 logger.error('Message repository insertion failed', { error: e.message });
               }
