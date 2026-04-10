@@ -6,10 +6,12 @@ import { pgTable, serial, text, timestamp, varchar, integer, boolean } from 'dri
  */
 export const channels = pgTable('channels', {
   id: serial('id').primaryKey(),
-  userId: integer('user_id').notNull(),
+  // userId will reference a users table once the auth layer is built.
+  // Left nullable for now so channels can be registered without a logged-in user.
+  userId: integer('user_id'),
   type: varchar('type', { length: 20 }).notNull(), // 'sim' | 'business_app'
   phoneNumber: varchar('phone_number', { length: 20 }),
-  whatsappId: text('whatsapp_phone_number_id'),
+  whatsappId: text('whatsapp_phone_number_id').unique(),
   wabaId: text('waba_id'),
   accessToken: text('access_token').notNull(),
   status: varchar('status').default('active'),

@@ -14,6 +14,8 @@ import { swaggerUI } from '@hono/swagger-ui';
 // ---------------------------------------------------------------------------
 interface WorkerEnv {
   DATABASE_URL: string;
+  META_APP_ID: string;
+  META_APP_SECRET: string;
   INBOX_SYNC: DurableObjectNamespace;
   RATE_LIMITER?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
 }

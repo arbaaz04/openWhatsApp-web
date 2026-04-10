@@ -17,6 +17,7 @@ dist
 .env.test.local
 .env.production.local
 .env
+PROJECT_ESSENTIALS.md
 
 npm-debug.log*
 yarn-debug.log*

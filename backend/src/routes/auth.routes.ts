@@ -4,20 +4,22 @@ import { logger } from '../utils/logger.js';
 import { rateLimiter } from '../utils/rateLimiter.js';
 import { authService } from '../services/authService.js';
 
-const authRouter = new OpenAPIHono();
+interface AuthBindings {
+  META_APP_ID: string;
+  META_APP_SECRET: string;
+}
+
+const authRouter = new OpenAPIHono<{ Bindings: AuthBindings }>();
 
 /**
- * Zod Schema strictly validating the Embedded Signup Callback body
+ * Validates the embedded signup callback body from the Meta JS SDK.
  */
 const embeddedSignupSchema = z.object({
-  code: z.string().min(1, 'Token code is required'),
+  code: z.string().min(1, 'Authorization code is required'),
   wabaId: z.string().min(1, 'WABA ID is required'),
   phoneNumberId: z.string().min(1, 'Phone Number ID is required'),
 });
 
-/**
- * OpenAPI Route Definition for Embedded Signup (Token Exchange)
- */
 const embeddedSignupRoute = createRoute({
   method: 'post',
   path: '/embedded-signup',
@@ -28,56 +30,45 @@ const embeddedSignupRoute = createRoute({
   },
   responses: {
     200: {
-      description: 'Exchange initiated successfully',
+      description: 'Token exchanged and channel saved',
       content: {
         'application/json': {
-          schema: z.object({
-            success: z.boolean(),
-            message: z.string(),
-          }),
+          schema: z.object({ success: z.boolean(), message: z.string() }),
         },
       },
     },
-    400: { description: 'Bad Request' },
+    400: { description: 'Bad Request — missing or invalid fields' },
+    502: { description: 'Upstream error from Meta Graph API' },
     500: { description: 'Internal Server Error' },
   },
 });
 
-/**
- * Endpoint to handle the Meta Embedded Signup token exchange callback
- * Enforces rate limiting heavily as this is an auth endpoint.
- */
 authRouter.openapi(embeddedSignupRoute, async (c) => {
   const { code, wabaId, phoneNumberId } = c.req.valid('json');
 
-  logger.info('Embedded signup callback received', { code, wabaId, phoneNumberId });
+  logger.info('Embedded signup callback received', { wabaId, phoneNumberId });
 
-  try {
-    // Phase 2 Logic: Retrieve long-lived token via Meta Graph API using the temporary `code`.
-    await authService.exchangeToken(
-      code,
-      wabaId,
-      phoneNumberId,
-      process.env.META_APP_ID || '',
-      process.env.META_APP_SECRET || ''
-    );
+  // Credentials come from Cloudflare env bindings — never hardcoded or process.env
+  const clientId = c.env.META_APP_ID;
+  const clientSecret = c.env.META_APP_SECRET;
 
-    return c.json(
-      { success: true, message: 'WhatsApp account connection initiated. This may take a moment.' },
-      200
-    );
-  } catch (error: unknown) {
-    const errObj = error instanceof Error ? error : new Error(String(error));
-    logger.error('Failed token exchange', { error: errObj.message, wabaId });
+  if (!clientId || !clientSecret) {
     throw new ApiError(
       500,
-      'Failed to initiate WhatsApp account connection',
-      'TOKEN_EXCHANGE_FAILED'
+      'META_APP_ID or META_APP_SECRET binding is not configured',
+      'MISSING_ENV_BINDINGS'
     );
   }
+
+  await authService.exchangeToken(code, wabaId, phoneNumberId, clientId, clientSecret);
+
+  return c.json(
+    { success: true, message: 'WhatsApp channel connected successfully.' },
+    200
+  );
 });
 
-// Apply rate limiting specifically to this auth endpoint
+// Rate-limit the auth endpoint — 20 req/min per IP
 authRouter.use('/embedded-signup', rateLimiter(20));
 
 export default authRouter;

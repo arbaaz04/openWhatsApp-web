@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { InboxSync } from '../durable_objects/InboxSync.js';
 
-// Polyfill WebSocketPair for Node.js — Cloudflare Workers provides this natively
+// Polyfill WebSocketPair for Node — CF runtime provides this natively
 (global as Record<string, unknown>).WebSocketPair = class {
   [key: number]: { accept: () => void; addEventListener: () => void; send: () => void };
   constructor() {
@@ -10,23 +10,50 @@ import { InboxSync } from '../durable_objects/InboxSync.js';
   }
 };
 
+/** Build a minimal DurableObjectState stub with Hibernation API support */
+function makeState(sockets: WebSocket[] = []) {
+  return {
+    acceptWebSocket: vi.fn(),
+    getWebSockets: vi.fn().mockReturnValue(sockets),
+  } as unknown as DurableObjectState;
+}
+
 describe('InboxSync Durable Object', () => {
-  it('should initialise with an empty sessions set', () => {
-    const doObj = new InboxSync({} as DurableObjectState);
+  it('initialises with an empty local sessions set', () => {
+    const doObj = new InboxSync(makeState());
     expect(doObj.sessions.size).toBe(0);
   });
 
-  it('should broadcast a POST payload to all registered sessions', async () => {
-    const doObj = new InboxSync({} as DurableObjectState);
+  it('returns 426 for plain HTTP requests (not websocket upgrades)', async () => {
+    const doObj = new InboxSync(makeState());
+    const res = await doObj.fetch(new Request('http://localhost/'));
+    expect(res.status).toBe(426);
+  });
 
+  it('calls ctx.acceptWebSocket for valid upgrade requests', async () => {
+    const state = makeState();
+    const doObj = new InboxSync(state);
+    const req = new Request('http://localhost/ws', { headers: { Upgrade: 'websocket' } });
+
+    // Node throws on 101 responses — the important thing is acceptWebSocket was called
+    try {
+      await doObj.fetch(req);
+    } catch {
+      // expected in Node test env
+    }
+
+    expect(state.acceptWebSocket).toHaveBeenCalledOnce();
+  });
+
+  it('broadcasts a POST payload to all runtime-hydrated sessions', async () => {
     const session1 = { send: vi.fn() };
     const session2 = { send: vi.fn() };
-    doObj.sessions.add(session1 as unknown as WebSocket);
-    doObj.sessions.add(session2 as unknown as WebSocket);
+    const state = makeState([session1, session2] as unknown as WebSocket[]);
+    const doObj = new InboxSync(state);
 
     const req = new Request('http://internal/broadcast', {
       method: 'POST',
-      body: JSON.stringify({ message: 'ping' }),
+      body: JSON.stringify({ message: 'new message' }),
     });
 
     const res = await doObj.fetch(req);
@@ -36,38 +63,33 @@ describe('InboxSync Durable Object', () => {
     expect(session2.send).toHaveBeenCalledOnce();
   });
 
-  it('should evict a session that throws on send', async () => {
-    const doObj = new InboxSync({} as DurableObjectState);
-
+  it('evicts a session from the local Set when send throws', async () => {
     const goodSession = { send: vi.fn() };
-    const badSession = { send: vi.fn().mockImplementation(() => { throw new Error('Connection closed'); }) };
-    doObj.sessions.add(goodSession as unknown as WebSocket);
+    const badSession = {
+      send: vi.fn().mockImplementation(() => { throw new Error('Connection reset'); }),
+    };
+
+    const state = makeState([goodSession, badSession] as unknown as WebSocket[]);
+    const doObj = new InboxSync(state);
+    // Inject bad session into local set to test eviction path
     doObj.sessions.add(badSession as unknown as WebSocket);
 
-    const req = new Request('http://internal/broadcast', {
-      method: 'POST',
-      body: '{}',
-    });
+    await doObj.fetch(new Request('http://internal/broadcast', { method: 'POST', body: '{}' }));
 
-    await doObj.fetch(req);
-
-    expect(doObj.sessions.size).toBe(1);
-    expect(doObj.sessions.has(goodSession as unknown as WebSocket)).toBe(true);
+    // badSession evicted from local set; goodSession unaffected
     expect(doObj.sessions.has(badSession as unknown as WebSocket)).toBe(false);
   });
 
-  it('should return 426 Upgrade Required for non-WebSocket non-broadcast requests', async () => {
-    const doObj = new InboxSync({} as DurableObjectState);
-    const req = new Request('http://localhost/whatever');
-    const res = await doObj.fetch(req);
-    expect(res.status).toBe(426);
+  it('no-ops on webSocketMessage (reserved for future events)', () => {
+    const doObj = new InboxSync(makeState());
+    expect(() => doObj.webSocketMessage({} as WebSocket, 'ping')).not.toThrow();
   });
 
-  it('should attempt WebSocket upgrade (throws in Node — correct CF behaviour)', async () => {
-    const doObj = new InboxSync({} as DurableObjectState);
-    const req = new Request('http://localhost/ws', { headers: { Upgrade: 'websocket' } });
-    // Node.js Response rejects status 101 — this is expected in test env.
-    // In Cloudflare Workers runtime this works natively.
-    await expect(doObj.fetch(req)).rejects.toThrow();
+  it('removes a socket from the local set on webSocketClose', () => {
+    const doObj = new InboxSync(makeState());
+    const ws = {} as WebSocket;
+    doObj.sessions.add(ws);
+    doObj.webSocketClose(ws);
+    expect(doObj.sessions.has(ws)).toBe(false);
   });
 });

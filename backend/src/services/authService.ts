@@ -102,7 +102,6 @@ export const authService = {
         logger.info('Channel credentials rotated', { wabaId, phoneNumberId });
       } else {
         await db.insert(channels).values({
-          userId: 1, // TODO: derive from authenticated session once auth layer exists
           type: 'business_app',
           wabaId,
           whatsappId: phoneNumberId,
