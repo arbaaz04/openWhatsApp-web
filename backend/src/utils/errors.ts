@@ -11,16 +11,16 @@
 export class ApiError extends Error {
   public statusCode: number;
   public code: string;
-  public details?: any;
+  public details?: unknown;
 
   /**
    * Creates an instance of ApiError.
    * @param {number} statusCode - HTTP status code
    * @param {string} message - Human readable error message
    * @param {string} [code='INTERNAL_ERROR'] - Machine readable error code
-   * @param {any} [details] - Additional error context
+   * @param {unknown} [details] - Additional error context
    */
-  constructor(statusCode: number, message: string, code: string = 'INTERNAL_ERROR', details?: any) {
+  constructor(statusCode: number, message: string, code: string = 'INTERNAL_ERROR', details?: unknown) {
     super(message);
     this.statusCode = statusCode;
     this.code = code;
@@ -33,9 +33,9 @@ export class ApiError extends Error {
  * Formats an error into the globally strictly structured response format.
  * Format: { success: false, error: { code, message, details } }
  * @param {unknown} err - The error object to format
- * @returns {Record<string, any>} Structured error response payload
+ * @returns {Record<string, unknown>} Structured error response payload
  */
-export function formatErrorResponse(err: unknown): Record<string, any> {
+export function formatErrorResponse(err: unknown): Record<string, unknown> {
   if (err instanceof ApiError) {
     return {
       success: false,

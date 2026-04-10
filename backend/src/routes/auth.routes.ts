@@ -2,6 +2,7 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { ApiError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
 import { rateLimiter } from '../utils/rateLimiter.js';
+import { authService } from '../services/authService.js';
 
 const authRouter = new OpenAPIHono();
 
@@ -53,20 +54,21 @@ authRouter.openapi(embeddedSignupRoute, async (c) => {
 
   try {
     // Phase 2 Logic: Retrieve long-lived token via Meta Graph API using the temporary `code`.
-    // In a full implementation, we'd invoke the \`exchangeTokenService\` here.
-
-    // Abstracted Token Exchange Call
-    // const tokenResponse = await exchangeTokenService(code, wabaId, phoneNumberId);
-
-    // Abstracted DB saving
-    // await channelsRepository.createOrUpdateChannel({ wabaId, phoneNumberId, accessToken: tokenResponse.accessToken });
+    await authService.exchangeToken(
+      code,
+      wabaId,
+      phoneNumberId,
+      process.env.META_APP_ID || '',
+      process.env.META_APP_SECRET || ''
+    );
 
     return c.json(
       { success: true, message: 'WhatsApp account connection initiated. This may take a moment.' },
       200
     );
-  } catch (error: any) {
-    logger.error('Failed token exchange', { error: error.message, wabaId });
+  } catch (error: unknown) {
+    const errObj = error instanceof Error ? error : new Error(String(error));
+    logger.error('Failed token exchange', { error: errObj.message, wabaId });
     throw new ApiError(
       500,
       'Failed to initiate WhatsApp account connection',

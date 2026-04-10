@@ -6,9 +6,9 @@
  * Logs information globally in a structured JSON format to easily trace via DataDog/CloudWatch.
  * @param {string} level - 'INFO' | 'WARN' | 'ERROR' | 'DEBUG'
  * @param {string} message - The message to log
- * @param {Record<string, any>} [context] - Key value pairs of context data
+ * @param {Record<string, unknown>} [context] - Key value pairs of context data
  */
-function log(level: string, message: string, context?: Record<string, any>) {
+function log(level: string, message: string, context?: Record<string, unknown>) {
   if (process.env.NODE_ENV === 'test' && level !== 'ERROR') return;
 
   const payload = {
@@ -28,8 +28,8 @@ function log(level: string, message: string, context?: Record<string, any>) {
 }
 
 export const logger = {
-  info: (msg: string, context?: Record<string, any>) => log('INFO', msg, context),
-  warn: (msg: string, context?: Record<string, any>) => log('WARN', msg, context),
-  error: (msg: string, context?: Record<string, any>) => log('ERROR', msg, context),
-  debug: (msg: string, context?: Record<string, any>) => log('DEBUG', msg, context),
+  info: (msg: string, context?: Record<string, unknown>) => log('INFO', msg, context),
+  warn: (msg: string, context?: Record<string, unknown>) => log('WARN', msg, context),
+  error: (msg: string, context?: Record<string, unknown>) => log('ERROR', msg, context),
+  debug: (msg: string, context?: Record<string, unknown>) => log('DEBUG', msg, context),
 };

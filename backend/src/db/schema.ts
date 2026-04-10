@@ -11,7 +11,7 @@ export const channels = pgTable('channels', {
   phoneNumber: varchar('phone_number', { length: 20 }),
   whatsappId: text('whatsapp_phone_number_id'),
   wabaId: text('waba_id'),
-  accessToken: text('access_token'),
+  accessToken: text('access_token').notNull(),
   status: varchar('status').default('active'),
 });
 

@@ -1,6 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { logger } from './utils/logger.js';
 import { ApiError, formatErrorResponse } from './utils/errors.js';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 /**
  * Main application router incorporating OpenAPI auto-docs
@@ -21,14 +22,14 @@ app.onError((err, c) => {
   logger.error('Unhandled Exception', { error: err.message, stack: err.stack });
 
   const statusCode = err instanceof ApiError ? err.statusCode : 500;
-  return c.json(formatErrorResponse(err), statusCode as any);
+  return c.json(formatErrorResponse(err), statusCode as ContentfulStatusCode);
 });
 
 // Global 404 Handler
 app.notFound((c) => {
   return c.json(
     formatErrorResponse(new ApiError(404, 'Endpoint not found', 'NOT_FOUND')),
-    404 as any
+    404 as ContentfulStatusCode
   );
 });
 

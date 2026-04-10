@@ -1,6 +1,7 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { webhookService } from '../services/webhookService.js';
 import { logger } from '../utils/logger.js';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 const webhookRouter = new OpenAPIHono();
 
@@ -19,7 +20,7 @@ webhookRouter.get('/', (c) => {
     return c.text(challenge || '');
   } else {
     logger.error('Failed webhook verification', { providedToken: token });
-    return c.text('Forbidden', 403 as any);
+    return c.text('Forbidden', 403 as ContentfulStatusCode);
   }
 });
 
@@ -46,14 +47,14 @@ const webhookPostRoute = createRoute({
 
 webhookRouter.openapi(webhookPostRoute, async (c) => {
   try {
-    const payload = c.req.valid('json');
+    const payload = c.req.valid('json') as Record<string, unknown>;
     // Using un-awaited background processing strategy to return 200 OK fast
-    c.executionCtx.waitUntil(webhookService.processPayload(payload, c.env));
+    c.executionCtx.waitUntil(webhookService.processPayload(payload, c.env as Record<string, unknown>));
   } catch (error) {
     logger.error('Webhook payload parsing error', { error });
   }
 
-  return c.json({ success: true }, 200 as any);
+  return c.json({ success: true }, 200 as ContentfulStatusCode);
 });
 
 export default webhookRouter;
