@@ -13,3 +13,9 @@ export function initializeDb(databaseUrl: string) {
   const sql = neon(databaseUrl);
   return drizzle(sql, { schema });
 }
+
+// Ensure process.env is accessible for edge/node polyfills
+export const db = typeof process !== 'undefined' && process.env.DATABASE_URL 
+  ? initializeDb(process.env.DATABASE_URL) 
+  : {} as any; // Safe mock for typings until explicitly initialized
+

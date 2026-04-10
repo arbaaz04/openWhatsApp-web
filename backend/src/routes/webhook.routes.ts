@@ -19,7 +19,7 @@ webhookRouter.get('/', (c) => {
     return c.text(challenge || '');
   } else {
     logger.error('Failed webhook verification', { providedToken: token });
-    return c.text('Forbidden', 403);
+    return c.text('Forbidden', 403 as any);
   }
 });
 
