@@ -15,5 +15,15 @@
       "tag": "v1",
       "new_classes": ["InboxSync"]
     }
+  ],
+  "rate_limiting": [
+    {
+      "binding": "RATE_LIMITER",
+      "namespace_id": "whatflow-rate-limiter",
+      "simple": {
+        "limit": 100,
+        "period": 60
+      }
+    }
   ]
 }

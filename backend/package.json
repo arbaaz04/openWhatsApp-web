@@ -7,8 +7,15 @@
   "scripts": {
     "dev": "wrangler dev src/index.ts",
     "deploy": "wrangler deploy --minify src/index.ts",
-    "lint": "eslint \"src/**/*.ts\"",
-    "test": "vitest run"
+    "lint": "eslint \"src/**/*.ts\" --ignore-pattern \"src/__tests__/**\"",
+    "test": "vitest run --reporter=verbose"
+  },
+  "vitest": {
+    "include": ["src/__tests__/**/*.test.ts"],
+    "coverage": {
+      "include": ["src/**/*.ts"],
+      "exclude": ["src/__tests__/**", "src/types/**"]
+    }
   },
   "dependencies": {
     "@hono/swagger-ui": "^0.6.1",

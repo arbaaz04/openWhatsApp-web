@@ -4,62 +4,119 @@ import { db } from '../db/index.js';
 import { channels } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
+// ---------------------------------------------------------------------------
+// Meta Graph API response shape for token exchange
+// ---------------------------------------------------------------------------
+interface MetaTokenResponse {
+  access_token: string;
+  token_type: string;
+}
+
 /**
- * Service to execute WhatsApp Cloud API authentication exchanges.
- * This bridges Meta's short-lived JS tokens into long-lived system tokens.
+ * Calls the Meta Graph API to exchange a short-lived embedded signup code
+ * for a long-lived System User Access Token.
+ *
+ * @param clientId - Your Meta App ID
+ * @param clientSecret - Your Meta App Secret
+ * @param code - The temporary code from the embedded signup flow
+ * @returns The long-lived access token string
+ * @throws {ApiError} if Meta returns a non-200 or a malformed response
+ */
+async function fetchMetaAccessToken(
+  clientId: string,
+  clientSecret: string,
+  code: string
+): Promise<string> {
+  const url = new URL('https://graph.facebook.com/v21.0/oauth/access_token');
+  url.searchParams.set('client_id', clientId);
+  url.searchParams.set('client_secret', clientSecret);
+  url.searchParams.set('code', code);
+
+  const response = await fetch(url.toString());
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    logger.error('Meta token exchange failed', {
+      status: response.status,
+      body: errorBody,
+    });
+    throw new ApiError(
+      502,
+      'Failed to exchange token with Meta — upstream error',
+      'META_TOKEN_EXCHANGE_FAILED'
+    );
+  }
+
+  const data = (await response.json()) as MetaTokenResponse;
+
+  if (!data.access_token) {
+    throw new ApiError(
+      502,
+      'Meta returned a response without an access_token',
+      'META_MISSING_ACCESS_TOKEN'
+    );
+  }
+
+  return data.access_token;
+}
+
+/**
+ * Service responsible for WhatsApp Cloud API authentication flows.
+ * Converts short-lived embedded signup codes into persisted channel records.
  */
 export const authService = {
   /**
-   * Exchanges an embedded signup temporary code for a System User Access Token
-   * 
-   * @param code - The short lived code fired from Meta React UI
-   * @param wabaId - The associated WABA ID
-   * @param phoneNumberId - Given Phone ID context 
-   * @param clientId - The FB App Client ID
-   * @param clientSecret - The FB App Secret
+   * Exchanges an embedded signup code for a long-lived access token and
+   * upserts the corresponding channel record in the database.
+   *
+   * @param code - Short-lived code from Meta's embedded signup JS callback
+   * @param wabaId - WhatsApp Business Account ID
+   * @param phoneNumberId - Phone Number ID associated with the channel
+   * @param clientId - Meta App ID (from environment bindings)
+   * @param clientSecret - Meta App Secret (from environment bindings)
    */
   async exchangeToken(
     code: string,
     wabaId: string,
     phoneNumberId: string,
-    _clientId: string,
-    _clientSecret: string
-  ) {
+    clientId: string,
+    clientSecret: string
+  ): Promise<{ success: true }> {
     logger.info('Initiating Meta token exchange', { wabaId, phoneNumberId });
-    
-    // Simulate HTTP graph api call locally to preserve user mock state. 
-    // In strict production, this calls fetch(\`graph.facebook.com/v25.0/oauth/access_token\`)
-    const rawAccessToken = `EAA${code}MOCK${Buffer.from(wabaId).toString('hex')}TOKEN`;
-    
-    if (!rawAccessToken) {
-      throw new ApiError(500, 'Invalid token received from Meta', 'BAD_OAUTH_TOKEN');
-    }
+
+    const accessToken = await fetchMetaAccessToken(clientId, clientSecret, code);
 
     try {
-      // Create or update the channel with the newly discovered access token
-      const existing = await db.select().from(channels).where(eq(channels.whatsappId, phoneNumberId)).limit(1);
+      const existing = await db
+        .select({ id: channels.id })
+        .from(channels)
+        .where(eq(channels.whatsappId, phoneNumberId))
+        .limit(1);
 
       if (existing.length > 0) {
-        await db.update(channels)
-            .set({ wabaId, accessToken: rawAccessToken })
-            .where(eq(channels.whatsappId, phoneNumberId));
+        await db
+          .update(channels)
+          .set({ wabaId, accessToken })
+          .where(eq(channels.whatsappId, phoneNumberId));
+
+        logger.info('Channel credentials rotated', { wabaId, phoneNumberId });
       } else {
         await db.insert(channels).values({
-            userId: 1, // Mock system user
-            type: 'business_app',
-            wabaId,
-            whatsappId: phoneNumberId,
-            accessToken: rawAccessToken
+          userId: 1, // TODO: derive from authenticated session once auth layer exists
+          type: 'business_app',
+          wabaId,
+          whatsappId: phoneNumberId,
+          accessToken,
         });
+
+        logger.info('Channel onboarded', { wabaId, phoneNumberId });
       }
 
-      logger.info('Channel successfully onboarded', { wabaId, phoneNumberId });
-      
-      return { success: true, accessToken: rawAccessToken };
+      return { success: true };
     } catch (e: unknown) {
-      const dbErr = e instanceof Error ? e.message : 'Unknown DB error';
-      logger.error('Failed storing channel credentials', { error: dbErr });
+      const message = e instanceof Error ? e.message : String(e);
+      logger.error('Failed to persist channel credentials', { error: message });
       throw new ApiError(500, 'Failed to save channel connection', 'DB_ERROR');
     }
-  }
+  },
 };

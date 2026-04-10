@@ -1,58 +1,68 @@
-import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { OpenAPIHono, createRoute } from '@hono/zod-openapi';
+import { z } from 'zod';
 import { webhookService } from '../services/webhookService.js';
 import { logger } from '../utils/logger.js';
+import { MetaWebhookPayloadSchema } from '../types/webhook.types.js';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 const webhookRouter = new OpenAPIHono();
 
-/**
- * Verifies webhook registration request from Meta
- */
+// ---------------------------------------------------------------------------
+// GET /api/webhooks  — Meta webhook verification handshake
+// ---------------------------------------------------------------------------
 webhookRouter.get('/', (c) => {
   const mode = c.req.query('hub.mode');
   const token = c.req.query('hub.verify_token');
   const challenge = c.req.query('hub.challenge');
 
-  const EXPECTED_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN;
+  const expectedToken = process.env.WEBHOOK_VERIFY_TOKEN;
 
-  if (mode === 'subscribe' && token === EXPECTED_TOKEN) {
+  if (mode === 'subscribe' && token === expectedToken) {
     logger.info('Webhook verified by Meta');
-    return c.text(challenge || '');
-  } else {
-    logger.error('Failed webhook verification', { providedToken: token });
-    return c.text('Forbidden', 403 as ContentfulStatusCode);
+    return c.text(challenge ?? '');
   }
+
+  logger.error('Webhook verification failed', { providedToken: token });
+  return c.text('Forbidden', 403 as ContentfulStatusCode);
 });
 
-/**
- * Zod Payload definitions for strict Meta POST Requests
- */
-const fallbackSchema = z.record(z.string(), z.any());
-
-/**
- * Receives Webhook events from Meta (messages, templates, etc.)
- */
+// ---------------------------------------------------------------------------
+// POST /api/webhooks — Inbound Meta webhook events
+// ---------------------------------------------------------------------------
 const webhookPostRoute = createRoute({
   method: 'post',
   path: '/',
   request: {
     body: {
-      content: { 'application/json': { schema: fallbackSchema } },
+      content: {
+        'application/json': {
+          // Full Meta payload shape — no z.any() shortcuts
+          schema: MetaWebhookPayloadSchema,
+        },
+      },
     },
   },
   responses: {
-    200: { description: 'Webhook Received' },
+    200: {
+      description: 'Webhook received and queued for processing',
+      content: {
+        'application/json': {
+          schema: z.object({ success: z.boolean() }),
+        },
+      },
+    },
   },
 });
 
 webhookRouter.openapi(webhookPostRoute, async (c) => {
-  try {
-    const payload = c.req.valid('json') as Record<string, unknown>;
-    // Using un-awaited background processing strategy to return 200 OK fast
-    c.executionCtx.waitUntil(webhookService.processPayload(payload, c.env as Record<string, unknown>));
-  } catch (error) {
-    logger.error('Webhook payload parsing error', { error });
-  }
+  // Payload is fully typed — no casting required
+  const payload = c.req.valid('json');
+
+  // Return 200 immediately; process in the background.
+  // waitUntil ensures Cloudflare keeps the isolate alive until work completes.
+  c.executionCtx.waitUntil(
+    webhookService.processPayload(payload, c.env as Record<string, unknown>)
+  );
 
   return c.json({ success: true }, 200 as ContentfulStatusCode);
 });
