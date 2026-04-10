@@ -4,7 +4,6 @@ import { webhookService } from '../services/webhookService.js';
 import { logger } from '../utils/logger.js';
 import { MetaWebhookPayloadSchema } from '../types/webhook.types.js';
 import type { WorkerBindings } from '../types/bindings.js';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 const webhookRouter = new OpenAPIHono<{ Bindings: WorkerBindings }>();
 
@@ -63,7 +62,7 @@ webhookRouter.openapi(webhookPostRoute, async (c) => {
     webhookService.processPayload(payload, c.env)
   );
 
-  return c.json({ success: true }, 200 as ContentfulStatusCode);
+  return c.json({ success: true }, 200);
 });
 
 export default webhookRouter;

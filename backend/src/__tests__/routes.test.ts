@@ -17,7 +17,8 @@ describe('API Route Integrations', () => {
     const req = new Request(
       'http://localhost/?hub.mode=subscribe&hub.verify_token=test_token&hub.challenge=abc123'
     );
-    const res = await webhookRouter.fetch(req, env, { waitUntil: vi.fn(), passThroughOnException: vi.fn() });
+    const ctx = { waitUntil: vi.fn(), passThroughOnException: vi.fn() } as unknown as ExecutionContext;
+    const res = await webhookRouter.fetch(req, env, ctx);
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('abc123');
   });
@@ -27,7 +28,8 @@ describe('API Route Integrations', () => {
     const req = new Request(
       'http://localhost/?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=abc123'
     );
-    const res = await webhookRouter.fetch(req, env, { waitUntil: vi.fn(), passThroughOnException: vi.fn() });
+    const ctx = { waitUntil: vi.fn(), passThroughOnException: vi.fn() } as unknown as ExecutionContext;
+    const res = await webhookRouter.fetch(req, env, ctx);
     expect(res.status).toBe(403);
   });
 
