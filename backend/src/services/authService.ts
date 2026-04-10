@@ -22,8 +22,8 @@ export const authService = {
     code: string,
     wabaId: string,
     phoneNumberId: string,
-    clientId: string,
-    clientSecret: string
+    _clientId: string,
+    _clientSecret: string
   ) {
     logger.info('Initiating Meta token exchange', { wabaId, phoneNumberId });
     
