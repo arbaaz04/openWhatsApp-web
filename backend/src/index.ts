@@ -32,10 +32,21 @@ app.notFound((c) => {
 import authRouter from './routes/auth.routes.js'
 import webhookRouter from './routes/webhook.routes.js'
 import wsRouter from './routes/ws.routes.js'
+import { swaggerUI } from '@hono/swagger-ui'
 
 app.route('/api/auth', authRouter);
 app.route('/api/webhooks', webhookRouter);
 app.route('/api/ws', wsRouter);
+
+app.doc('/doc', {
+  openapi: '3.1.0',
+  info: {
+    version: '1.0.0',
+    title: 'Whatflow Kapso Clone API',
+  },
+})
+
+app.get('/ui', swaggerUI({ url: '/doc' }))
 
 app.get('/', (c) => {
   return c.json({ success: true, message: 'Whatflow API Online' });
