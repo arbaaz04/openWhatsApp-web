@@ -3,13 +3,9 @@ import { ApiError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
 import { rateLimiter } from '../utils/rateLimiter.js';
 import { authService } from '../services/authService.js';
+import type { WorkerBindings } from '../types/bindings.js';
 
-interface AuthBindings {
-  META_APP_ID: string;
-  META_APP_SECRET: string;
-}
-
-const authRouter = new OpenAPIHono<{ Bindings: AuthBindings }>();
+const authRouter = new OpenAPIHono<{ Bindings: WorkerBindings }>();
 
 /**
  * Validates the embedded signup callback body from the Meta JS SDK.
@@ -38,8 +34,8 @@ const embeddedSignupRoute = createRoute({
       },
     },
     400: { description: 'Bad Request — missing or invalid fields' },
+    500: { description: 'META_APP_ID or META_APP_SECRET binding not configured' },
     502: { description: 'Upstream error from Meta Graph API' },
-    500: { description: 'Internal Server Error' },
   },
 });
 
@@ -48,9 +44,8 @@ authRouter.openapi(embeddedSignupRoute, async (c) => {
 
   logger.info('Embedded signup callback received', { wabaId, phoneNumberId });
 
-  // Credentials come from Cloudflare env bindings — never hardcoded or process.env
-  const clientId = c.env.META_APP_ID;
-  const clientSecret = c.env.META_APP_SECRET;
+  // Credentials read from typed bindings — no process.env, no casting
+  const { META_APP_ID: clientId, META_APP_SECRET: clientSecret } = c.env;
 
   if (!clientId || !clientSecret) {
     throw new ApiError(
@@ -68,7 +63,7 @@ authRouter.openapi(embeddedSignupRoute, async (c) => {
   );
 });
 
-// Rate-limit the auth endpoint — 20 req/min per IP
+// 20 req/min — tighter than the global limit since this hits Meta's API
 authRouter.use('/embedded-signup', rateLimiter(20));
 
 export default authRouter;

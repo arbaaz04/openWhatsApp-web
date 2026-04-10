@@ -13,19 +13,21 @@ import webhookRouter from '../routes/webhook.routes.js';
 
 describe('API Route Integrations', () => {
   it('should verify Meta webhook handshake with correct token', async () => {
-    process.env.WEBHOOK_VERIFY_TOKEN = 'test_token';
-    const res = await webhookRouter.request(
-      '/?hub.mode=subscribe&hub.verify_token=test_token&hub.challenge=abc123'
+    const env = { WEBHOOK_VERIFY_TOKEN: 'test_token' };
+    const req = new Request(
+      'http://localhost/?hub.mode=subscribe&hub.verify_token=test_token&hub.challenge=abc123'
     );
+    const res = await webhookRouter.fetch(req, env, { waitUntil: vi.fn(), passThroughOnException: vi.fn() });
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('abc123');
   });
 
   it('should reject Meta webhook handshake with wrong token', async () => {
-    process.env.WEBHOOK_VERIFY_TOKEN = 'test_token';
-    const res = await webhookRouter.request(
-      '/?hub.mode=subscribe&hub.verify_token=wrong_token&hub.challenge=abc123'
+    const env = { WEBHOOK_VERIFY_TOKEN: 'test_token' };
+    const req = new Request(
+      'http://localhost/?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=abc123'
     );
+    const res = await webhookRouter.fetch(req, env, { waitUntil: vi.fn(), passThroughOnException: vi.fn() });
     expect(res.status).toBe(403);
   });
 

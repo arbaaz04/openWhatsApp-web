@@ -2,38 +2,23 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { logger } from './utils/logger.js';
 import { ApiError, formatErrorResponse } from './utils/errors.js';
 import { createDb, setDb } from './db/index.js';
+import { swaggerUI } from '@hono/swagger-ui';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { WorkerBindings } from './types/bindings.js';
 
 import authRouter from './routes/auth.routes.js';
 import webhookRouter from './routes/webhook.routes.js';
 import wsRouter from './routes/ws.routes.js';
-import { swaggerUI } from '@hono/swagger-ui';
 
-// ---------------------------------------------------------------------------
-// Cloudflare Workers environment bindings type
-// ---------------------------------------------------------------------------
-interface WorkerEnv {
-  DATABASE_URL: string;
-  META_APP_ID: string;
-  META_APP_SECRET: string;
-  INBOX_SYNC: DurableObjectNamespace;
-  RATE_LIMITER?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
-}
+const app = new OpenAPIHono<{ Bindings: WorkerBindings }>();
 
-// ---------------------------------------------------------------------------
-// Application router
-// ---------------------------------------------------------------------------
-const app = new OpenAPIHono<{ Bindings: WorkerEnv }>();
-
-// Request logging middleware
+// Request logging
 app.use('*', async (c, next) => {
   logger.info('Incoming Request', { method: c.req.method, path: c.req.path });
   await next();
 });
 
-// DB initialisation middleware — runs on every request.
-// In a warm isolate the Proxy forwards to the same already-set instance.
-// Guards against missing env so unit tests using app.request() don't crash.
+// DB initialisation — guards against missing binding so app.fetch() works in tests
 app.use('*', async (c, next) => {
   if (c.env?.DATABASE_URL) {
     setDb(createDb(c.env.DATABASE_URL));
@@ -56,18 +41,15 @@ app.notFound((c) =>
   )
 );
 
-// Routes
 app.route('/api/auth', authRouter);
 app.route('/api/webhooks', webhookRouter);
 app.route('/api/ws', wsRouter);
 
-// OpenAPI docs
 app.doc('/doc', {
   openapi: '3.1.0',
   info: { version: '1.0.0', title: 'WhatFlow API' },
 });
 app.get('/ui', swaggerUI({ url: '/doc' }));
-
 app.get('/', (c) => c.json({ success: true, message: 'Whatflow API Online' }));
 
 export { InboxSync } from './durable_objects/InboxSync.js';

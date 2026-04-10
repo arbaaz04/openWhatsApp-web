@@ -3,19 +3,21 @@ import { z } from 'zod';
 import { webhookService } from '../services/webhookService.js';
 import { logger } from '../utils/logger.js';
 import { MetaWebhookPayloadSchema } from '../types/webhook.types.js';
+import type { WorkerBindings } from '../types/bindings.js';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
-const webhookRouter = new OpenAPIHono();
+const webhookRouter = new OpenAPIHono<{ Bindings: WorkerBindings }>();
 
 // ---------------------------------------------------------------------------
-// GET /api/webhooks  — Meta webhook verification handshake
+// GET /api/webhooks — Meta webhook verification handshake
 // ---------------------------------------------------------------------------
 webhookRouter.get('/', (c) => {
   const mode = c.req.query('hub.mode');
   const token = c.req.query('hub.verify_token');
   const challenge = c.req.query('hub.challenge');
 
-  const expectedToken = process.env.WEBHOOK_VERIFY_TOKEN;
+  // Read from typed Cloudflare env binding — not process.env
+  const expectedToken = c.env.WEBHOOK_VERIFY_TOKEN;
 
   if (mode === 'subscribe' && token === expectedToken) {
     logger.info('Webhook verified by Meta');
@@ -36,7 +38,6 @@ const webhookPostRoute = createRoute({
     body: {
       content: {
         'application/json': {
-          // Full Meta payload shape — no z.any() shortcuts
           schema: MetaWebhookPayloadSchema,
         },
       },
@@ -55,13 +56,11 @@ const webhookPostRoute = createRoute({
 });
 
 webhookRouter.openapi(webhookPostRoute, async (c) => {
-  // Payload is fully typed — no casting required
   const payload = c.req.valid('json');
 
-  // Return 200 immediately; process in the background.
-  // waitUntil ensures Cloudflare keeps the isolate alive until work completes.
+  // Ack immediately; let the runtime keep the isolate alive for background work
   c.executionCtx.waitUntil(
-    webhookService.processPayload(payload, c.env as Record<string, unknown>)
+    webhookService.processPayload(payload, c.env)
   );
 
   return c.json({ success: true }, 200 as ContentfulStatusCode);
