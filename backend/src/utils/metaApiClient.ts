@@ -136,7 +136,7 @@ export async function sendWhatsAppMessage(options: {
           if (retryAfter) {
             backoffMs = parseInt(retryAfter, 10) * 1000;
           } else {
-             backoffMs = Math.max(backoffMs, 2000); // minimum 2s backoff for 429s without header
+            backoffMs = Math.max(backoffMs, 2000); // minimum 2s backoff for 429s without header
           }
           lastError = new MetaApiError(err);
           log.warn('Meta API rate limited (429) — will back off and retry', {

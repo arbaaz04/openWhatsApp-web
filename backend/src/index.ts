@@ -8,6 +8,7 @@ import { cors } from './middleware/cors.js';
 import { swaggerUI } from '@hono/swagger-ui';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { WorkerBindings } from './types/bindings.js';
+import type { MetaWebhookPayload } from './types/webhook.types.js';
 
 import authRouter from './routes/auth.routes.js';
 import webhookRouter from './routes/webhook.routes.js';
@@ -141,11 +142,16 @@ export default {
    * Cloudflare Queue consumer for async processing (e.g. Meta webhooks).
    * Webhooks are fast-acked on the HTTP layer and handled robustly here.
    */
-  async queue(batch: MessageBatch<any>, env: WorkerBindings, _ctx: ExecutionContext): Promise<void> {
+  async queue(
+    batch: MessageBatch<MetaWebhookPayload>,
+    env: WorkerBindings,
+    _ctx: ExecutionContext
+  ): Promise<void> {
+    if (env.HYPERDRIVE) {
+      setDb(createDb(env.HYPERDRIVE.connectionString));
+    }
+
     const { webhookService } = await import('./services/webhookService.js');
-    import('./db/index.js').then(({ setDb, createDb }) => {
-      if (env.HYPERDRIVE) setDb(createDb(env.HYPERDRIVE.connectionString));
-    });
 
     for (const message of batch.messages) {
       try {

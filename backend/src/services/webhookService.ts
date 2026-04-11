@@ -6,8 +6,11 @@ import type { WorkerBindings } from '../types/bindings.js';
 /**
  * Processes a validated Meta WhatsApp webhook payload.
  *
- * Intentionally never throws — runs inside waitUntil() so the 200 ack has
- * already been sent. Any failure is logged and the message is dropped.
+ * Runs inside the Cloudflare Queue consumer.
+ *
+ * Per-message failures are intentionally logged and skipped to keep processing
+ * the rest of the batch. Queue-level failures (outside this function) are
+ * handled by the consumer, which can call `message.retry()`.
  */
 export const webhookService = {
   async processPayload(
