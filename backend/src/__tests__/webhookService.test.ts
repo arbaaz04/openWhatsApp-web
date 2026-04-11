@@ -36,7 +36,7 @@ describe('Webhook Service — Payload Processing', () => {
     await webhookService.processPayload(basePayload());
 
     expect(messageRepository.processIncomingMessage).toHaveBeenCalledOnce();
-    expect(messageRepository.processIncomingMessage).toHaveBeenCalledWith('host123', 'cust456', 'Hello');
+    expect(messageRepository.processIncomingMessage).toHaveBeenCalledWith('host123', 'cust456', 'Hello', 'msg1');
   });
 
   it('should skip changes with field other than "messages"', async () => {
@@ -73,7 +73,7 @@ describe('Webhook Service — Payload Processing', () => {
 
     await webhookService.processPayload(payload);
 
-    expect(messageRepository.processIncomingMessage).toHaveBeenCalledWith('host123', 'cust456', 'Yes please');
+    expect(messageRepository.processIncomingMessage).toHaveBeenCalledWith('host123', 'cust456', 'Yes please', 'msg3');
   });
 
   it('should not throw if the repository throws — silently logs', async () => {

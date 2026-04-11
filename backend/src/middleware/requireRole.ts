@@ -1,15 +1,14 @@
 /**
  * @file RBAC role enforcement middleware.
  *
- * Must be used after `requireAuth` — it assumes `userId` is already set on
- * the context. Looks up the caller's role in `team_members` for the given
- * team (resolved from a `teamId` route/query param) and rejects if the role
- * is not in the allowed list.
+ * Must be composed after `requireAuth` — it requires `userId` to be set on the
+ * context. It then looks up the caller's role in `team_members` for the given
+ * team and rejects with 403 if the role is not in the allowed list.
  *
- * Role hierarchy:
- * - `admin`       — full access to all features and settings
- * - `developer`   — developer settings, integrations, read inbox
- * - `subordinate` — inbox and conversations only
+ * Role hierarchy (most → least permissive):
+ *   `admin`       — full access to all features and settings
+ *   `developer`   — developer settings, integrations, read inbox
+ *   `subordinate` — inbox and conversations only
  */
 
 import type { Context, Next } from 'hono';
@@ -17,24 +16,26 @@ import { ApiError } from '../utils/errors.js';
 import { db } from '../db/index.js';
 import { teamMembers } from '../db/schema.js';
 import { and, eq } from 'drizzle-orm';
-import type { WorkerBindings } from '../types/bindings.js';
+import type { AppEnv } from '../types/honoContext.js';
 
 /** All valid roles in the system. */
 export type Role = 'admin' | 'developer' | 'subordinate';
 
 /**
- * Returns a Hono middleware that allows only callers with one of the specified
- * roles on the team indicated by the `teamId` route parameter.
+ * Returns a Hono middleware that allows only callers with one of the given roles.
  *
- * The `teamId` is read from:
- * 1. Route parameter `c.req.param('teamId')` — for routes like `/teams/:teamId/...`
- * 2. Query parameter `c.req.query('teamId')` — fallback for flat routes
+ * The team is identified by `teamId` in order of preference:
+ * 1. Route parameter (`/teams/:teamId/...`)
+ * 2. Query parameter (`?teamId=...`)
  *
- * @param allowedRoles - One or more roles permitted to access the route
+ * On success it writes `teamId` (as a string) to the request context so
+ * downstream handlers can use `c.get('teamId')` without another DB lookup.
+ *
+ * @param allowedRoles - One or more roles permitted to call the route
  *
  * @example
  * // Only admins can delete a team member
- * router.delete('/members/:userId', requireAuth, requireRole('admin'), handler);
+ * router.delete('/members/:id', requireAuth, requireRole('admin'), handler);
  *
  * @example
  * // Admins and developers can view integrations
@@ -42,21 +43,21 @@ export type Role = 'admin' | 'developer' | 'subordinate';
  */
 export function requireRole(
   ...allowedRoles: Role[]
-): (c: Context<{ Bindings: WorkerBindings }>, next: Next) => Promise<void> {
+): (c: Context<AppEnv>, next: Next) => Promise<void> {
   return async (c, next) => {
-    const userId = (c as Context<{ Bindings: WorkerBindings; Variables: Record<string, string> }>)
-      .get('userId');
+    const userId = c.get('userId');
 
     if (!userId) {
-      throw new ApiError(401, 'requireRole used without requireAuth', 'UNAUTHORIZED');
+      // Programming error — requireRole composed without requireAuth
+      throw new ApiError(401, 'requireRole must be composed after requireAuth', 'UNAUTHORIZED');
     }
 
-    const teamId = c.req.param('teamId') ?? c.req.query('teamId');
-    if (!teamId) {
+    const teamIdRaw = c.req.param('teamId') ?? c.req.query('teamId');
+    if (!teamIdRaw) {
       throw new ApiError(400, 'teamId is required for this endpoint', 'MISSING_TEAM_ID');
     }
 
-    const teamIdInt = parseInt(teamId, 10);
+    const teamIdInt = parseInt(teamIdRaw, 10);
     if (isNaN(teamIdInt)) {
       throw new ApiError(400, 'teamId must be a valid integer', 'INVALID_TEAM_ID');
     }
@@ -85,9 +86,8 @@ export function requireRole(
       );
     }
 
-    // Attach resolved teamId for convenience in downstream handlers
-    (c as Context<{ Bindings: WorkerBindings; Variables: Record<string, string> }>)
-      .set('teamId', String(teamIdInt));
+    // Attach the resolved teamId so handlers can use c.get('teamId')
+    c.set('teamId', String(teamIdInt));
 
     await next();
   };

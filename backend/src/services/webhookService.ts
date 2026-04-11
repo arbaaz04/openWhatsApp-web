@@ -46,7 +46,8 @@ export const webhookService = {
             await messageRepository.processIncomingMessage(
               phoneNumberId,
               customerPhone,
-              bodyText
+              bodyText,
+              msg.id  // wamid — deduplicates duplicate webhook deliveries from Meta
             );
 
             // Broadcast to the channel's Durable Object inbox — no cast needed

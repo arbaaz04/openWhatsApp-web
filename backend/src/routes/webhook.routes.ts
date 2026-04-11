@@ -56,10 +56,8 @@ webhookRouter.use('/', async (c, next) => {
     return c.json({ success: false, error: 'Invalid webhook signature' }, 401);
   }
 
-  // Patch the already-consumed text back so Hono's body parser can re-read it.
-  // Hono internally caches body reads, so attaching here is consistent with
-  // how hono/body-cache works.
-  (c.req as unknown as Record<string, unknown>)['_rawBody'] = rawBody;
+  // Hono internally caches the body from the c.req.text() call above.
+  // The openapi validator will read from that cache via c.req.json() — no patch needed.
   await next();
 });
 
