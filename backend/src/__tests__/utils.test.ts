@@ -29,16 +29,18 @@ describe('Utils Suite', () => {
   describe('Logger', () => {
     it('should write ERROR level logs even in test environment', () => {
       const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      logger.error('Test error', { key: 'value' });
+      const testLogger = createLogger({}, { environment: 'test' });
+      testLogger.error('Test error', { key: 'value' });
       expect(spy).toHaveBeenCalled();
       spy.mockRestore();
     });
 
     it('should suppress INFO/WARN/DEBUG in test environment', () => {
       const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-      logger.info('Should be suppressed');
-      logger.warn('Also suppressed');
-      logger.debug('Also suppressed');
+      const testLogger = createLogger({}, { environment: 'test' });
+      testLogger.info('Should be suppressed');
+      testLogger.warn('Also suppressed');
+      testLogger.debug('Also suppressed');
       expect(spy).not.toHaveBeenCalled();
       spy.mockRestore();
     });
@@ -123,15 +125,17 @@ describe('Utils Suite', () => {
     });
   });
 
-  describe('setTelemetrySink', () => {
-    it('forwards ERROR logs to the configured sink URL', async () => {
+  describe('telemetry sink forwarding', () => {
+    it('forwards ERROR logs when logger has sink options', async () => {
       const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
       const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      const { setTelemetrySink } = await import('../utils/logger.js');
-      setTelemetrySink('https://ingest.example.com/logs', 'tok_abc');
+      const log = createLogger({}, {
+        sinkUrl: 'https://ingest.example.com/logs',
+        sinkToken: 'tok_abc',
+      });
 
-      logger.error('Sink test error', { detail: 'something failed' });
+      log.error('Sink test error', { detail: 'something failed' });
 
       // fetch is fire-and-forget but synchronously enqueued — allow microtasks
       await Promise.resolve();
@@ -139,23 +143,22 @@ describe('Utils Suite', () => {
         'https://ingest.example.com/logs',
         expect.objectContaining({ method: 'POST' })
       );
-
-      // Reset sink so other tests are not affected
-      setTelemetrySink('', '');
       fetchSpy.mockRestore();
       spy.mockRestore();
     });
 
     it('does not forward INFO logs to the sink', async () => {
       const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
-      const { setTelemetrySink } = await import('../utils/logger.js');
-      setTelemetrySink('https://ingest.example.com/logs', 'tok_abc');
 
-      logger.info('Not forwarded');
+      const log = createLogger({}, {
+        sinkUrl: 'https://ingest.example.com/logs',
+        sinkToken: 'tok_abc',
+      });
+
+      log.info('Not forwarded');
       await Promise.resolve();
       expect(fetchSpy).not.toHaveBeenCalled();
 
-      setTelemetrySink('', '');
       fetchSpy.mockRestore();
     });
   });

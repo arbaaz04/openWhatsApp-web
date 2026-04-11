@@ -14,19 +14,26 @@ function makeState(sockets: { send: ReturnType<typeof vi.fn> }[] = []) {
   return {
     acceptWebSocket: vi.fn(),
     getWebSockets: vi.fn().mockReturnValue(sockets),
+    waitUntil: vi.fn(),
   } as unknown as DurableObjectState;
+}
+
+function makeEnv() {
+  return {
+    META_APP_SECRET: 'test-secret',
+  } as unknown as import('../types/bindings.js').WorkerBindings;
 }
 
 describe('InboxSync Durable Object', () => {
   it('returns 426 for non-websocket upgrade requests', async () => {
-    const doObj = new InboxSync(makeState());
+    const doObj = new InboxSync(makeState(), makeEnv());
     const res = await doObj.fetch(new Request('http://localhost/'));
     expect(res.status).toBe(426);
   });
 
   it('calls ctx.acceptWebSocket for valid upgrade requests', async () => {
     const state = makeState();
-    const doObj = new InboxSync(state);
+    const doObj = new InboxSync(state, makeEnv());
     const req = new Request('http://localhost/ws', { headers: { Upgrade: 'websocket' } });
 
     try {
@@ -40,10 +47,11 @@ describe('InboxSync Durable Object', () => {
 
   it('adds broadcast payload to the replay buffer', async () => {
     const state = makeState();
-    const doObj = new InboxSync(state);
+    const doObj = new InboxSync(state, makeEnv());
 
     const req = new Request('http://internal/broadcast', {
       method: 'POST',
+      headers: { 'x-internal-auth': 'test-secret' },
       body: JSON.stringify({ customerPhone: '123', bodyText: 'hello' }),
     });
 
@@ -58,10 +66,11 @@ describe('InboxSync Durable Object', () => {
     const session1 = { send: vi.fn() };
     const session2 = { send: vi.fn() };
     const state = makeState([session1, session2]);
-    const doObj = new InboxSync(state);
+    const doObj = new InboxSync(state, makeEnv());
 
     const req = new Request('http://internal/broadcast', {
       method: 'POST',
+      headers: { 'x-internal-auth': 'test-secret' },
       body: JSON.stringify({ customerPhone: '123', bodyText: 'hi' }),
     });
 
@@ -79,16 +88,20 @@ describe('InboxSync Durable Object', () => {
     };
 
     const state = makeState([goodSession, badSession]);
-    const doObj = new InboxSync(state);
+    const doObj = new InboxSync(state, makeEnv());
 
-    const req = new Request('http://internal/broadcast', { method: 'POST', body: '{}' });
+    const req = new Request('http://internal/broadcast', {
+      method: 'POST',
+      headers: { 'x-internal-auth': 'test-secret' },
+      body: '{}',
+    });
 
     await expect(doObj.fetch(req)).resolves.not.toThrow();
     expect(goodSession.send).toHaveBeenCalledOnce();
   });
 
   it('does not throw on webSocketMessage (reserved hook)', () => {
-    const doObj = new InboxSync(makeState());
+    const doObj = new InboxSync(makeState(), makeEnv());
     const ws = { deserializeAttachment: vi.fn().mockReturnValue(null), send: vi.fn() } as unknown as WebSocket;
     expect(() => doObj.webSocketMessage(ws, 'ping')).not.toThrow();
     // ping should trigger a pong response
@@ -96,14 +109,20 @@ describe('InboxSync Durable Object', () => {
   });
 
   it('does not throw on webSocketClose (runtime handles cleanup)', () => {
-    const doObj = new InboxSync(makeState());
+    const doObj = new InboxSync(makeState(), makeEnv());
     const ws = { deserializeAttachment: vi.fn().mockReturnValue(null) } as unknown as WebSocket;
     expect(() => doObj.webSocketClose(ws)).not.toThrow();
   });
 
   it('does not throw on webSocketError (runtime error handler)', () => {
-    const doObj = new InboxSync(makeState());
+    const doObj = new InboxSync(makeState(), makeEnv());
     const ws = { deserializeAttachment: vi.fn().mockReturnValue(null) } as unknown as WebSocket;
     expect(() => doObj.webSocketError(ws, new Error('Network reset'))).not.toThrow();
+  });
+
+  it('rejects unauthenticated internal broadcast requests', async () => {
+    const doObj = new InboxSync(makeState(), makeEnv());
+    const res = await doObj.fetch(new Request('http://internal/broadcast', { method: 'POST', body: '{}' }));
+    expect(res.status).toBe(401);
   });
 });

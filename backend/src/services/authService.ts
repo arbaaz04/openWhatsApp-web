@@ -76,6 +76,7 @@ export const authService = {
    * @param code              - Short-lived code from Meta's embedded signup JS callback
    * @param wabaId            - WhatsApp Business Account ID
    * @param phoneNumberId     - Phone Number ID associated with the channel
+  * @param teamId            - Team ID that owns this channel
    * @param clientId          - Meta App ID (from environment bindings)
    * @param clientSecret      - Meta App Secret (from environment bindings)
    * @param encryptionKey     - DATA_ENCRYPTION_KEY binding (64-char hex)
@@ -84,11 +85,12 @@ export const authService = {
     code: string,
     wabaId: string,
     phoneNumberId: string,
+    teamId: number,
     clientId: string,
     clientSecret: string,
     encryptionKey: string
   ): Promise<{ success: true }> {
-    logger.info('Initiating Meta token exchange', { wabaId, phoneNumberId });
+    logger.info('Initiating Meta token exchange', { wabaId, phoneNumberId, teamId });
 
     const plainAccessToken = await fetchMetaAccessToken(clientId, clientSecret, code);
 
@@ -97,12 +99,20 @@ export const authService = {
 
     try {
       const existing = await db
-        .select({ id: channels.id })
+        .select({ id: channels.id, teamId: channels.teamId })
         .from(channels)
         .where(eq(channels.whatsappId, phoneNumberId))
         .limit(1);
 
       if (existing.length > 0) {
+        if (existing[0].teamId !== teamId) {
+          throw new ApiError(
+            409,
+            'This WhatsApp number is already connected to another team',
+            'CHANNEL_TEAM_MISMATCH'
+          );
+        }
+
         await db
           .update(channels)
           .set({ wabaId, accessToken: encryptedToken })
@@ -111,6 +121,7 @@ export const authService = {
         logger.info('Channel credentials rotated', { wabaId, phoneNumberId });
       } else {
         await db.insert(channels).values({
+          teamId,
           type: 'business_app',
           wabaId,
           whatsappId: phoneNumberId,
@@ -122,6 +133,10 @@ export const authService = {
 
       return { success: true };
     } catch (e: unknown) {
+      if (e instanceof ApiError) {
+        throw e;
+      }
+
       const message = e instanceof Error ? e.message : String(e);
       logger.error('Failed to persist channel credentials', { error: message });
       throw new ApiError(500, 'Failed to save channel connection', 'DB_ERROR');

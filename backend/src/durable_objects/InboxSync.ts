@@ -29,6 +29,11 @@
  */
 
 import { createLogger } from '../utils/logger.js';
+import { db } from '../db/index.js';
+import { channels, conversations } from '../db/schema.js';
+import { messageRepository } from '../repositories/messageRepository.js';
+import { eq, desc } from 'drizzle-orm';
+import type { WorkerBindings } from '../types/bindings.js';
 
 /** How many messages to keep in the hot in-memory buffer. */
 const MESSAGE_BUFFER_SIZE = 50;
@@ -48,6 +53,7 @@ interface WsAttachment {
 
 export class InboxSync {
   private readonly ctx: DurableObjectState;
+  private readonly env: WorkerBindings;
 
   /**
    * Ring buffer of recent message payloads.
@@ -56,8 +62,9 @@ export class InboxSync {
    */
   private readonly recentMessages: string[] = [];
 
-  constructor(ctx: DurableObjectState) {
+  constructor(ctx: DurableObjectState, env: WorkerBindings) {
     this.ctx = ctx;
+    this.env = env;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -68,6 +75,10 @@ export class InboxSync {
     // Internal RPC — webhookService broadcasts new messages here.
     // -----------------------------------------------------------------------
     if (request.method === 'POST' && url.pathname.endsWith('/broadcast')) {
+      if (request.headers.get('x-internal-auth') !== this.env.META_APP_SECRET) {
+        return new Response('Unauthorized', { status: 401 });
+      }
+
       const payload = await request.text();
       this.bufferMessage(payload);
       await this.broadcast(payload);
@@ -203,20 +214,6 @@ export class InboxSync {
     // This is intentionally simple for the initial implementation — it replays
     // the most recently active conversation. Multi-conversation replay is a
     // follow-up feature.
-    const { messageRepository: repo } = await import('../repositories/messageRepository.js');
-
-    // Derive conversationId from the DO's name (phoneNumberId), which maps to
-    // a channel. We can't import db directly here (DO environment) — instead we
-    // call the repository which uses the shared db singleton.
-    //
-    // NOTE: The repository's processIncomingMessage sets up the db singleton
-    // via the worker main handler. Inside the DO, we rely on the singleton
-    // already being initialised when webhookService triggered the broadcast.
-    // If the DO was freshly evicted, getDb() may throw — caught by the caller.
-    const { db } = await import('../db/index.js');
-    const { channels, conversations } = await import('../db/schema.js');
-    const { eq } = await import('drizzle-orm');
-
     const [channel] = await db
       .select({ id: channels.id })
       .from(channels)
@@ -233,12 +230,12 @@ export class InboxSync {
       .select({ id: conversations.id })
       .from(conversations)
       .where(eq(conversations.channelId, channel.id))
-      .orderBy(conversations.lastCustomerMessageAt)
+      .orderBy(desc(conversations.lastCustomerMessageAt), desc(conversations.id))
       .limit(1);
 
     if (!conversation) return;
 
-    const missed = await repo.getMessagesSince(conversation.id, lastSeenMessageId);
+    const missed = await messageRepository.getMessagesSince(conversation.id, lastSeenMessageId);
 
     log.info('Replaying missed messages to reconnected client', {
       phoneNumberId,

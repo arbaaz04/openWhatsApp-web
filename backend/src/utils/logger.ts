@@ -5,12 +5,6 @@
  * 1. Module singleton — `logger.info(...)` — for services and repositories.
  * 2. Request-scoped — `createLogger({ requestId })` — for route handlers.
  *    All logs from the same request share the same requestId automatically.
- *
- * Telemetry sink (optional):
- *   If your code has access to an endpoint URL (e.g. an Axiom ingest URL stored
- *   in a Worker binding), call `setTelemetrySink(url, token)` once at request
- *   start. Subsequent ERROR and WARN logs will be forwarded there via a
- *   fire-and-forget `fetch`. Logs are always written to console regardless.
  */
 
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
@@ -23,40 +17,25 @@ export interface Logger {
   debug(msg: string, context?: LogContext): void;
 }
 
-// ---------------------------------------------------------------------------
-// Telemetry sink — optional, set per-request in index.ts middleware
-// ---------------------------------------------------------------------------
-let _sinkUrl: string | null = null;
-let _sinkToken: string | null = null;
-
-/**
- * Configures an external telemetry endpoint.
- * Logs at WARN and ERROR level will be forwarded here in addition to console.
- *
- * @param url   - HTTP(S) ingest URL (e.g. Axiom dataset endpoint)
- * @param token - Bearer token for the ingest API
- *
- * @example
- * // In index.ts middleware, if the binding is configured:
- * setTelemetrySink(c.env.TELEMETRY_URL, c.env.TELEMETRY_TOKEN);
- */
-export function setTelemetrySink(url: string, token: string): void {
-  _sinkUrl = url;
-  _sinkToken = token;
+interface LoggerOptions {
+  environment?: string;
+  sinkUrl?: string;
+  sinkToken?: string;
 }
 
-function forwardToSink(payload: Record<string, unknown>): void {
-  if (!_sinkUrl || !_sinkToken) return;
+function forwardToSink(
+  payload: Record<string, unknown>,
+  sinkUrl?: string,
+  sinkToken?: string
+): void {
+  if (!sinkUrl || !sinkToken) return;
 
   // Fire-and-forget — never await, never throw.
-  // In Workers this needs to be wrapped in waitUntil() for correctness,
-  // but at log-time we don't have execution context. The caller (index.ts)
-  // can wrap setTelemetrySink setup in waitUntil if needed.
-  fetch(_sinkUrl, {
+  fetch(sinkUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${_sinkToken}`,
+      Authorization: `Bearer ${sinkToken}`,
     },
     body: JSON.stringify([payload]),
   }).catch(() => {
@@ -67,8 +46,13 @@ function forwardToSink(payload: Record<string, unknown>): void {
 // ---------------------------------------------------------------------------
 // Core write function
 // ---------------------------------------------------------------------------
-function write(level: LogLevel, message: string, context?: LogContext): void {
-  if (process.env.NODE_ENV === 'test' && level !== 'ERROR') return;
+function write(
+  level: LogLevel,
+  message: string,
+  context: LogContext | undefined,
+  options: LoggerOptions
+): void {
+  if (options.environment === 'test' && level !== 'ERROR') return;
 
   const payload: Record<string, unknown> = {
     timestamp: new Date().toISOString(),
@@ -87,7 +71,7 @@ function write(level: LogLevel, message: string, context?: LogContext): void {
 
   // Forward significant events to external telemetry sink if configured
   if (level === 'ERROR' || level === 'WARN') {
-    forwardToSink(payload);
+    forwardToSink(payload, options.sinkUrl, options.sinkToken);
   }
 }
 
@@ -103,12 +87,12 @@ function write(level: LogLevel, message: string, context?: LogContext): void {
  * const log = createLogger({ requestId: c.get('requestId') });
  * log.info('Webhook verified'); // => { ..., requestId: "abc-123", ... }
  */
-export function createLogger(baseContext: LogContext): Logger {
+export function createLogger(baseContext: LogContext, options: LoggerOptions = {}): Logger {
   return {
-    info:  (msg, ctx) => write('INFO',  msg, { ...baseContext, ...ctx }),
-    warn:  (msg, ctx) => write('WARN',  msg, { ...baseContext, ...ctx }),
-    error: (msg, ctx) => write('ERROR', msg, { ...baseContext, ...ctx }),
-    debug: (msg, ctx) => write('DEBUG', msg, { ...baseContext, ...ctx }),
+    info:  (msg, ctx) => write('INFO',  msg, { ...baseContext, ...ctx }, options),
+    warn:  (msg, ctx) => write('WARN',  msg, { ...baseContext, ...ctx }, options),
+    error: (msg, ctx) => write('ERROR', msg, { ...baseContext, ...ctx }, options),
+    debug: (msg, ctx) => write('DEBUG', msg, { ...baseContext, ...ctx }, options),
   };
 }
 

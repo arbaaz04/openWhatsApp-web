@@ -19,6 +19,7 @@ import type { Context, Next } from 'hono';
  * - `X-Frame-Options` — blocks the app from being embedded in iframes (clickjacking)
  * - `Referrer-Policy` — limits referrer information sent to cross-origin destinations
  * - `Permissions-Policy` — denies access to sensitive browser APIs not needed by our API
+ * - `Content-Security-Policy` — strict policy for API responses
  */
 export async function securityHeaders(c: Context, next: Next): Promise<void> {
   await next();
@@ -26,6 +27,10 @@ export async function securityHeaders(c: Context, next: Next): Promise<void> {
   c.res.headers.set('X-Content-Type-Options', 'nosniff');
   c.res.headers.set('X-Frame-Options', 'DENY');
   c.res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  c.res.headers.set(
+    'Content-Security-Policy',
+    "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+  );
   c.res.headers.set(
     'Permissions-Policy',
     'geolocation=(), microphone=(), camera=(), payment=()'

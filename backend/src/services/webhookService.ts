@@ -57,6 +57,9 @@ export const webhookService = {
               await stub.fetch(
                 new Request('http://internal/broadcast', {
                   method: 'POST',
+                  headers: {
+                    'x-internal-auth': env.META_APP_SECRET,
+                  },
                   body: JSON.stringify({
                     customerPhone,
                     bodyText,

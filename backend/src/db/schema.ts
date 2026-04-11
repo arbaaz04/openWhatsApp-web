@@ -176,6 +176,8 @@ export const messages = pgTable(
     body: text('body'),
     direction: messageDirectionEnum('direction').notNull(),
     status: messageStatusEnum('status'),
+    /** Supabase user UUID of the agent who sent this outbound message. */
+    sentBy: text('sent_by').references(() => users.id),
     externalId: varchar('external_id', { length: 100 }).unique(), // WhatsApp message ID
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },

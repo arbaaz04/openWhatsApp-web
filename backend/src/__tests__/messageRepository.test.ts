@@ -8,6 +8,7 @@ vi.mock('../db/index.js', () => ({
     insert: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
+    transaction: vi.fn(),
   },
 }));
 
@@ -124,31 +125,32 @@ describe('messageRepository.processIncomingMessage', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('creates a new conversation when none exists', async () => {
-    // Channel found
-    vi.mocked(db.select)
-      .mockReturnValueOnce({
-        from: vi.fn().mockReturnThis(),
-        where: vi.fn().mockReturnThis(),
-        limit: vi.fn().mockResolvedValue([{ id: 10, whatsappId: 'phone1' }]),
-      } as never)
-      // No existing conversation
-      .mockReturnValueOnce({
-        from: vi.fn().mockReturnThis(),
-        where: vi.fn().mockReturnThis(),
-        limit: vi.fn().mockResolvedValue([]),
-      } as never);
+    const tx = {
+      select: vi.fn()
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnThis(),
+          where: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockResolvedValue([{ id: 10, whatsappId: 'phone1' }]),
+        })
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnThis(),
+          where: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockResolvedValue([]),
+        }),
+      insert: vi.fn()
+        .mockReturnValueOnce({
+          values: vi.fn().mockReturnThis(),
+          returning: vi.fn().mockResolvedValue([{ id: 99 }]),
+        })
+        .mockReturnValueOnce({
+          values: vi.fn().mockReturnThis(),
+          returning: vi.fn().mockResolvedValue([{ id: 201 }]),
+          onConflictDoNothing: vi.fn().mockReturnThis(),
+        }),
+      update: vi.fn(),
+    };
 
-    vi.mocked(db.insert)
-      .mockReturnValueOnce({
-        values: vi.fn().mockReturnThis(),
-        returning: vi.fn().mockResolvedValue([{ id: 99 }]),
-        onConflictDoNothing: vi.fn().mockReturnThis(),
-      } as never)
-      .mockReturnValueOnce({
-        values: vi.fn().mockReturnThis(),
-        returning: vi.fn().mockResolvedValue([{ id: 201 }]),
-        onConflictDoNothing: vi.fn().mockReturnThis(),
-      } as never);
+    vi.mocked(db.transaction).mockImplementation(async (callback) => callback(tx as never));
 
     const result = await messageRepository.processIncomingMessage(
       'phone1', '+1234567890', 'Hello', 'ext-msg-001'
@@ -156,39 +158,42 @@ describe('messageRepository.processIncomingMessage', () => {
 
     expect(result.conversationId).toBe(99);
     expect(result.messageId).toBe(201);
-    expect(db.insert).toHaveBeenCalledTimes(2); // conversation + message
+    expect(tx.insert).toHaveBeenCalledTimes(2); // conversation + message
   });
 
   it('reuses an existing conversation and refreshes the window', async () => {
-    vi.mocked(db.select)
+    const tx = {
+      select: vi.fn()
       .mockReturnValueOnce({
         from: vi.fn().mockReturnThis(),
         where: vi.fn().mockReturnThis(),
-        limit: vi.fn().mockResolvedValue([{ id: 10 }]),
+        limit: vi.fn().mockResolvedValue([{ id: 10, whatsappId: 'phone1' }]),
       } as never)
       .mockReturnValueOnce({
         from: vi.fn().mockReturnThis(),
         where: vi.fn().mockReturnThis(),
         limit: vi.fn().mockResolvedValue([{ id: 55 }]),
-      } as never);
+      } as never),
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnThis(),
+        where: vi.fn().mockResolvedValue([]),
+      }),
+      insert: vi.fn()
+      .mockReturnValueOnce({
+        values: vi.fn().mockReturnThis(),
+        returning: vi.fn().mockResolvedValue([{ id: 201 }]),
+        onConflictDoNothing: vi.fn().mockReturnThis(),
+      }),
+    };
 
-    vi.mocked(db.update).mockReturnValue({
-      set: vi.fn().mockReturnThis(),
-      where: vi.fn().mockResolvedValue([]),
-    } as never);
-
-    vi.mocked(db.insert).mockReturnValue({
-      values: vi.fn().mockReturnThis(),
-      returning: vi.fn().mockResolvedValue([{ id: 202 }]),
-      onConflictDoNothing: vi.fn().mockReturnThis(),
-    } as never);
+    vi.mocked(db.transaction).mockImplementation(async (callback) => callback(tx as never));
 
     const result = await messageRepository.processIncomingMessage(
       'phone1', '+1234567890', 'Hi again'
     );
 
     expect(result.conversationId).toBe(55);
-    expect(db.update).toHaveBeenCalledOnce(); // window refresh
-    expect(db.insert).toHaveBeenCalledOnce(); // only the message
+    expect(tx.update).toHaveBeenCalledOnce(); // window refresh
+    expect(tx.insert).toHaveBeenCalledOnce(); // only the message
   });
 });

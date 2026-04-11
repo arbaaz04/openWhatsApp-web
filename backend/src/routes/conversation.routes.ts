@@ -10,12 +10,13 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { createLogger } from '../utils/logger.js';
 import { ApiError } from '../utils/errors.js';
+import { rateLimiter } from '../utils/rateLimiter.js';
 import { db } from '../db/index.js';
 import { conversations, channels, teamMembers } from '../db/schema.js';
 import { messageRepository } from '../repositories/messageRepository.js';
 import { sendWhatsAppMessage } from '../utils/metaApiClient.js';
 import { decrypt } from '../utils/encryption.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
 
 // ---------------------------------------------------------------------------
@@ -38,7 +39,17 @@ const conversationRouter = new OpenAPIHono<{
 // Shared middleware — all /api/conversations routes require authentication
 // ---------------------------------------------------------------------------
 
-conversationRouter.use('/:conversationId/*', requireAuth);
+conversationRouter.use('*', requireAuth);
+
+// 60 req/min per IP for outbound sends only.
+const sendMessageRateLimiter = rateLimiter(60);
+conversationRouter.use('/:conversationId/messages', async (c, next) => {
+  if (c.req.method !== 'POST') {
+    await next();
+    return;
+  }
+  await sendMessageRateLimiter(c, next);
+});
 
 // ---------------------------------------------------------------------------
 // Shared ownership helper — resolves conversation and enforces team boundary
@@ -83,6 +94,85 @@ async function resolveAndAuthorize(
 
   return row;
 }
+
+// ---------------------------------------------------------------------------
+// GET / — list conversations for the authenticated user
+// ---------------------------------------------------------------------------
+
+const listConversationsRoute = createRoute({
+  method: 'get',
+  path: '/',
+  request: {
+    query: z.object({
+      limit: z.string().regex(/^\d+$/).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'Conversations visible to the authenticated user, newest activity first.',
+      content: {
+        'application/json': {
+          schema: z.object({
+            success: z.literal(true),
+            conversations: z.array(
+              z.object({
+                id: z.number(),
+                channelId: z.number(),
+                customerNumber: z.string(),
+                whatsappId: z.string().nullable(),
+                isWindowOpen: z.boolean().nullable(),
+                lastCustomerMessageAt: z.string().nullable(),
+                createdAt: z.string(),
+              })
+            ),
+          }),
+        },
+      },
+    },
+    401: { description: 'Unauthorized — missing or invalid JWT' },
+  },
+});
+
+conversationRouter.openapi(listConversationsRoute, async (c) => {
+  const log = createLogger({ requestId: c.get('requestId') });
+  const userId = c.get('userId');
+  const { limit } = c.req.valid('query');
+  const pageSize = Math.min(parseInt(limit ?? '50', 10), 100);
+
+  const rows = await db
+    .select({
+      id: conversations.id,
+      channelId: conversations.channelId,
+      customerNumber: conversations.customerNumber,
+      whatsappId: channels.whatsappId,
+      isWindowOpen: conversations.isWindowOpen,
+      lastCustomerMessageAt: conversations.lastCustomerMessageAt,
+      createdAt: conversations.createdAt,
+    })
+    .from(conversations)
+    .innerJoin(channels, eq(channels.id, conversations.channelId))
+    .innerJoin(teamMembers, eq(teamMembers.teamId, channels.teamId))
+    .where(eq(teamMembers.userId, userId))
+    .orderBy(desc(conversations.lastCustomerMessageAt), desc(conversations.id))
+    .limit(pageSize);
+
+  log.info('Conversations list served', { userId, count: rows.length, limit: pageSize });
+
+  return c.json({
+    success: true as const,
+    conversations: rows.map((row) => ({
+      id: row.id,
+      channelId: row.channelId,
+      customerNumber: row.customerNumber,
+      whatsappId: row.whatsappId,
+      isWindowOpen: row.isWindowOpen ?? false,
+      lastCustomerMessageAt: row.lastCustomerMessageAt
+        ? row.lastCustomerMessageAt.toISOString()
+        : null,
+      createdAt: row.createdAt.toISOString(),
+    })),
+  }, 200);
+});
 
 // ---------------------------------------------------------------------------
 // GET /:conversationId/messages — cursor-based pagination
@@ -305,6 +395,9 @@ conversationRouter.openapi(sendMessageRoute, async (c) => {
     c.executionCtx?.waitUntil(
       stub.fetch(new Request('http://internal/broadcast', {
         method: 'POST',
+        headers: {
+          'x-internal-auth': c.env.META_APP_SECRET,
+        },
         body: JSON.stringify({
           type: 'outgoing',
           messageId,

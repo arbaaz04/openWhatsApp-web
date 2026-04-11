@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
 import { channels, conversations, messages } from '../db/schema.js';
-import { eq, and, lt, desc } from 'drizzle-orm';
+import { eq, and, lt, desc, gt, asc } from 'drizzle-orm';
 import { ApiError } from '../utils/errors.js';
 
 /** Default page size for cursor-based pagination. */
@@ -18,6 +18,7 @@ export interface MessageRow {
   body: string | null;
   direction: 'incoming' | 'outgoing' | 'echo';
   status: string | null;
+  sentBy: string | null;
   externalId: string | null;
   createdAt: Date;
 }
@@ -41,76 +42,95 @@ export const messageRepository = {
     body: string,
     externalId?: string
   ): Promise<{ messageId: number; conversationId: number }> {
-    // 1. Resolve Channel — fail fast if not registered
-    const [channel] = await db
-      .select()
-      .from(channels)
-      .where(eq(channels.whatsappId, phoneNumberId))
-      .limit(1);
+    return db.transaction(async (tx) => {
+      // 1. Resolve Channel — fail fast if not registered
+      const [channel] = await tx
+        .select({ id: channels.id })
+        .from(channels)
+        .where(eq(channels.whatsappId, phoneNumberId))
+        .limit(1);
 
-    if (!channel) {
-      throw new ApiError(
-        404,
-        `Channel not found for phone_number_id: ${phoneNumberId}`,
-        'CHANNEL_NOT_FOUND'
-      );
-    }
+      if (!channel) {
+        throw new ApiError(
+          404,
+          `Channel not found for phone_number_id: ${phoneNumberId}`,
+          'CHANNEL_NOT_FOUND'
+        );
+      }
 
-    // 2. Resolve Conversation scoped by both channel AND customer.
-    //    Without channelId scope, two channels receiving the same customer number
-    //    would incorrectly share a conversation record.
-    const [existing] = await db
-      .select({ id: conversations.id })
-      .from(conversations)
-      .where(
-        and(
-          eq(conversations.channelId, channel.id),
-          eq(conversations.customerNumber, customerNumber)
+      // 2. Resolve Conversation scoped by both channel AND customer.
+      //    Without channelId scope, two channels receiving the same customer number
+      //    would incorrectly share a conversation record.
+      const [existing] = await tx
+        .select({ id: conversations.id })
+        .from(conversations)
+        .where(
+          and(
+            eq(conversations.channelId, channel.id),
+            eq(conversations.customerNumber, customerNumber)
+          )
         )
-      )
-      .limit(1);
+        .limit(1);
 
-    let conversationId: number;
+      let conversationId: number;
 
-    if (!existing) {
-      // First message from this customer on this channel — create conversation
-      const [inserted] = await db
-        .insert(conversations)
+      if (!existing) {
+        // First message from this customer on this channel — create conversation
+        const [insertedConversation] = await tx
+          .insert(conversations)
+          .values({
+            channelId: channel.id,
+            customerNumber,
+            lastCustomerMessageAt: new Date(),
+            isWindowOpen: true,
+          })
+          .returning({ id: conversations.id });
+
+        conversationId = insertedConversation.id;
+      } else {
+        conversationId = existing.id;
+
+        // 3. Refresh 24-hour service window — always update on inbound message
+        await tx
+          .update(conversations)
+          .set({ lastCustomerMessageAt: new Date(), isWindowOpen: true })
+          .where(eq(conversations.id, conversationId));
+      }
+
+      // 4. Persist the message record.
+      //    externalId enables idempotency: the UNIQUE constraint on messages.external_id
+      //    means duplicate webhook deliveries are silently ignored at the DB level.
+      const [insertedMessage] = await tx
+        .insert(messages)
         .values({
-          channelId: channel.id,
-          customerNumber,
-          lastCustomerMessageAt: new Date(),
-          isWindowOpen: true,
+          conversationId,
+          body,
+          direction: 'incoming' as const,
+          status: 'delivered' as const,
+          externalId: externalId ?? null,
         })
-        .returning({ id: conversations.id });
+        .onConflictDoNothing() // duplicate externalId → skip silently
+        .returning({ id: messages.id });
 
-      conversationId = inserted.id;
-    } else {
-      conversationId = existing.id;
+      if (insertedMessage?.id) {
+        return { messageId: insertedMessage.id, conversationId };
+      }
 
-      // 3. Refresh 24-hour service window — always update on inbound message
-      await db
-        .update(conversations)
-        .set({ lastCustomerMessageAt: new Date(), isWindowOpen: true })
-        .where(eq(conversations.id, conversationId));
-    }
+      // Duplicate webhook delivery path: resolve the already persisted row.
+      if (externalId) {
+        const [existingMessage] = await tx
+          .select({ id: messages.id })
+          .from(messages)
+          .where(eq(messages.externalId, externalId))
+          .limit(1);
 
-    // 4. Persist the message record.
-    //    externalId enables idempotency: the UNIQUE constraint on messages.external_id
-    //    means duplicate webhook deliveries are silently ignored at the DB level.
-    const [inserted] = await db
-      .insert(messages)
-      .values({
-        conversationId,
-        body,
-        direction: 'incoming' as const,
-        status: 'delivered' as const,
-        externalId: externalId ?? null,
-      })
-      .onConflictDoNothing() // duplicate externalId → skip silently
-      .returning({ id: messages.id });
+        if (existingMessage) {
+          return { messageId: existingMessage.id, conversationId };
+        }
+      }
 
-    return { messageId: inserted?.id ?? 0, conversationId };
+      return { messageId: 0, conversationId };
+    });
   },
 
   /**
@@ -185,7 +205,6 @@ export const messageRepository = {
     wamid: string,
     sentBy: string
   ): Promise<{ messageId: number }> {
-    void sentBy; // stored for future audit-log column — schema will include this in Phase 5
     const [inserted] = await db
       .insert(messages)
       .values({
@@ -193,6 +212,7 @@ export const messageRepository = {
         body,
         direction: 'outgoing' as const,
         status: 'sent' as const,
+        sentBy,
         externalId: wamid,
       })
       .returning({ id: messages.id });
@@ -215,8 +235,6 @@ export const messageRepository = {
     conversationId: number,
     afterMessageId: number
   ): Promise<MessageRow[]> {
-    const { gt } = await import('drizzle-orm');
-
     const rows = await db
       .select()
       .from(messages)
@@ -226,7 +244,7 @@ export const messageRepository = {
           gt(messages.id, afterMessageId)
         )
       )
-      .orderBy(messages.id); // ascending — oldest first for playback
+      .orderBy(asc(messages.id)); // ascending — oldest first for playback
 
     return rows as MessageRow[];
   },

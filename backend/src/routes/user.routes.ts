@@ -127,23 +127,27 @@ userRouter.openapi(createTeamRoute, async (c) => {
   const userId = c.get('userId');
   const { name } = c.req.valid('json');
 
-  const [team] = await db
-    .insert(teams)
-    .values({ name, ownerUserId: userId })
-    .returning({ id: teams.id });
+  const teamId = await db.transaction(async (tx) => {
+    const [team] = await tx
+      .insert(teams)
+      .values({ name, ownerUserId: userId })
+      .returning({ id: teams.id });
 
-  if (!team) throw new ApiError(500, 'Failed to create team', 'DB_ERROR');
+    if (!team) throw new ApiError(500, 'Failed to create team', 'DB_ERROR');
 
-  // Creator is automatically an admin of the team they created
-  await db.insert(teamMembers).values({
-    teamId: team.id,
-    userId,
-    role: 'admin',
+    // Creator is automatically an admin of the team they created.
+    await tx.insert(teamMembers).values({
+      teamId: team.id,
+      userId,
+      role: 'admin',
+    });
+
+    return team.id;
   });
 
-  log.info('Team created', { teamId: team.id, name, userId });
+  log.info('Team created', { teamId, name, userId });
 
-  return c.json({ success: true, teamId: team.id }, 201);
+  return c.json({ success: true, teamId }, 201);
 });
 
 // ---------------------------------------------------------------------------

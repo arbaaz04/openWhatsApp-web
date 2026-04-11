@@ -47,6 +47,12 @@ describe('securityHeaders middleware', () => {
     expect(c.res.headers.get('Referrer-Policy')).toBeTruthy();
   });
 
+  it('sets Content-Security-Policy', async () => {
+    const c = makeContext();
+    await securityHeaders(c as never, vi.fn().mockResolvedValue(undefined));
+    expect(c.res.headers.get('Content-Security-Policy')).toContain("default-src 'none'");
+  });
+
   it('calls next() exactly once', async () => {
     const next = vi.fn().mockResolvedValue(undefined);
     await securityHeaders(makeContext() as never, next);

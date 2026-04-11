@@ -16,6 +16,7 @@ const embeddedSignupSchema = z.object({
   code: z.string().min(1, 'Authorization code is required'),
   wabaId: z.string().min(1, 'WABA ID is required'),
   phoneNumberId: z.string().min(1, 'Phone Number ID is required'),
+  teamId: z.number().int().positive('teamId must be a positive integer'),
 });
 
 const embeddedSignupRoute = createRoute({
@@ -43,9 +44,9 @@ const embeddedSignupRoute = createRoute({
 
 authRouter.openapi(embeddedSignupRoute, async (c) => {
   const log = createLogger({ requestId: c.get('requestId') });
-  const { code, wabaId, phoneNumberId } = c.req.valid('json');
+  const { code, wabaId, phoneNumberId, teamId } = c.req.valid('json');
 
-  log.info('Embedded signup callback received', { wabaId, phoneNumberId });
+  log.info('Embedded signup callback received', { wabaId, phoneNumberId, teamId });
 
   const { META_APP_ID: clientId, META_APP_SECRET: clientSecret } = c.env;
 
@@ -61,6 +62,7 @@ authRouter.openapi(embeddedSignupRoute, async (c) => {
     code,
     wabaId,
     phoneNumberId,
+    teamId,
     clientId,
     clientSecret,
     c.env.DATA_ENCRYPTION_KEY

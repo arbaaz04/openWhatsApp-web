@@ -1,5 +1,5 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
-import { createLogger, logger, setTelemetrySink } from './utils/logger.js';
+import { createLogger, logger } from './utils/logger.js';
 import { ApiError, formatErrorResponse } from './utils/errors.js';
 import { createDb, setDb } from './db/index.js';
 import { validateEnv } from './utils/validateEnv.js';
@@ -47,15 +47,7 @@ app.use('*', securityHeaders);
 // 3. CORS — reject disallowed origins early, before any business logic
 app.use('*', cors);
 
-// 4. Configure optional telemetry sink (fire-and-forget for ERROR/WARN)
-app.use('*', async (c, next) => {
-  if (c.env?.TELEMETRY_URL && c.env?.TELEMETRY_TOKEN) {
-    setTelemetrySink(c.env.TELEMETRY_URL, c.env.TELEMETRY_TOKEN);
-  }
-  await next();
-});
-
-// 5. Validate all required env bindings — fail fast with 503 rather than
+// 4. Validate all required env bindings — fail fast with 503 rather than
 //    a confusing 500 deep inside a service call
 app.use('*', async (c, next) => {
   if (c.env?.HYPERDRIVE) {
@@ -64,7 +56,7 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// 6. Request body size guard — rejects payloads over 512KB to prevent memory exhaustion
+// 5. Request body size guard — rejects payloads over 512KB to prevent memory exhaustion
 app.use('*', async (c, next) => {
   const contentLength = parseInt(c.req.header('Content-Length') ?? '0', 10);
   if (contentLength > 512 * 1024) {
@@ -73,7 +65,7 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// 7. DB initialisation via Hyperdrive — Hyperdrive pools connections at the
+// 6. DB initialisation via Hyperdrive — Hyperdrive pools connections at the
 //    Cloudflare edge, so cold-start latency for DB queries is drastically reduced.
 app.use('*', async (c, next) => {
   if (c.env?.HYPERDRIVE) {
@@ -82,10 +74,17 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// 8. Structured request logging with requestId — runs after DB init so
+// 7. Structured request logging with requestId — runs after DB init so
 //    we can log a complete picture including durationMs on response
 app.use('*', async (c, next) => {
-  const log = createLogger({ requestId: c.get('requestId') });
+  const log = createLogger(
+    { requestId: c.get('requestId') },
+    {
+      environment: c.env.ENVIRONMENT,
+      sinkUrl: c.env.TELEMETRY_URL,
+      sinkToken: c.env.TELEMETRY_TOKEN,
+    }
+  );
   const start = Date.now();
   log.info('Request started', { method: c.req.method, path: c.req.path });
   await next();
