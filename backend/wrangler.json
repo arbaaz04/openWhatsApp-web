@@ -2,6 +2,7 @@
   "name": "whatflow-web-backend",
   "main": "src/index.ts",
   "compatibility_date": "2024-04-10",
+  "compatibility_flags": ["nodejs_compat"],
   "account_id": "4f1f004b2eace5ca5b30dec4a2b9c90d",
   "vars": {
     "ALLOWED_ORIGIN": "http://localhost:5173",
