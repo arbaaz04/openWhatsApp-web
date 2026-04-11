@@ -38,7 +38,11 @@ export const rateLimiter = (limit: number = 100) => {
       return;
     }
 
-    // MODE 2: In-memory fallback
+    if (c.env?.ENVIRONMENT !== 'local') {
+      throw new ApiError(503, 'Rate limiter binding missing in production environment', 'MISCONFIGURED');
+    }
+
+    // MODE 2: In-memory fallback (local dev ONLY)
     const now = Date.now();
     let record = localStore.get(ip);
 

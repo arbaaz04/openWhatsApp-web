@@ -102,20 +102,26 @@ describe('sendWhatsAppMessage', () => {
   });
 
   it('maps error code 130429 (rate limit) to HTTP 429', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
+    vi.mocked(globalThis.fetch).mockImplementation(async () =>
       makeMetaErrorResponse(130429, 'Rate limit', 429)
     );
 
+    vi.useFakeTimers();
     try {
-      await sendWhatsAppMessage(BASE_OPTIONS);
-    } catch (err) {
-      expect((err as MetaApiError).statusCode).toBe(429);
+      const promise = sendWhatsAppMessage(BASE_OPTIONS);
+      const assertion = expect(promise).rejects.toSatisfy((err: unknown) => {
+        return err instanceof MetaApiError && err.statusCode === 429;
+      });
+      await vi.runAllTimersAsync();
+      await assertion;
+    } finally {
+      vi.useRealTimers();
     }
   });
 
   it('retries on 5xx and eventually throws after all retries fail', async () => {
-    const server500 = makeMetaErrorResponse(131000, 'Temporary server error', 500);
-    vi.mocked(globalThis.fetch).mockResolvedValue(server500);
+    const server500 = () => makeMetaErrorResponse(131000, 'Temporary server error', 500);
+    vi.mocked(globalThis.fetch).mockImplementation(async () => server500());
 
     vi.useFakeTimers();
     try {

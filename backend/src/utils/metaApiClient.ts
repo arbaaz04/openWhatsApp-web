@@ -114,6 +114,8 @@ export async function sendWhatsAppMessage(options: {
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    let backoffMs = INITIAL_BACKOFF_MS * 2 ** (attempt - 1);
+
     try {
       const response = await fetchWithTimeout(url, {
         method: 'POST',
@@ -128,22 +130,37 @@ export async function sendWhatsAppMessage(options: {
 
       if (!response.ok) {
         const err = extractMetaError(json);
-        // 4xx errors are deterministic — retrying won't help.
-        if (response.status < 500) {
+        
+        if (response.status === 429) {
+          const retryAfter = response.headers.get('Retry-After');
+          if (retryAfter) {
+            backoffMs = parseInt(retryAfter, 10) * 1000;
+          } else {
+             backoffMs = Math.max(backoffMs, 2000); // minimum 2s backoff for 429s without header
+          }
+          lastError = new MetaApiError(err);
+          log.warn('Meta API rate limited (429) — will back off and retry', {
+            attempt,
+            backoffMs,
+            metaCode: err.code,
+          });
+        } else if (response.status < 500) {
+          // 4xx errors are deterministic — retrying won't help.
           throw new MetaApiError(err);
+        } else {
+          // 5xx — fall through to retry
+          lastError = new MetaApiError(err);
+          log.warn('Meta API 5xx — will retry', {
+            attempt,
+            status: response.status,
+            metaCode: err.code,
+          });
         }
-        // 5xx — fall through to retry
-        lastError = new MetaApiError(err);
-        log.warn('Meta API 5xx — will retry', {
-          attempt,
-          status: response.status,
-          metaCode: err.code,
-        });
       } else {
         return parseSentMessage(json);
       }
     } catch (err) {
-      if (err instanceof MetaApiError && err.statusCode < 500) {
+      if (err instanceof MetaApiError && err.statusCode < 500 && err.statusCode !== 429) {
         // Deterministic 4xx from Meta — retrying won't help.
         throw err;
       }
@@ -151,7 +168,7 @@ export async function sendWhatsAppMessage(options: {
         // Our own ApiErrors (504 timeout, 502 unexpected response) — surface immediately.
         throw err;
       }
-      // Pure network failure — retryable
+      // Pure network failure or rate limit — retryable
       lastError = err;
       log.warn('Meta API request failed — will retry', {
         attempt,
@@ -160,7 +177,7 @@ export async function sendWhatsAppMessage(options: {
     }
 
     if (attempt < MAX_RETRIES) {
-      await sleep(INITIAL_BACKOFF_MS * 2 ** (attempt - 1));
+      await sleep(backoffMs);
     }
   }
 

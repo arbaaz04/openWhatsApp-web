@@ -8,7 +8,13 @@
  * Production values are set via `wrangler secret put` or the CF dashboard.
  * Local dev values go in `.dev.vars` (gitignored).
  */
+import type { MetaWebhookPayload } from './webhook.types.js';
+
 export interface WorkerBindings {
+  /** Queue for asynchronous Meta webhook processing */
+  WEBHOOK_QUEUE: Queue<MetaWebhookPayload>;
+  /** Optional environment flag (e.g., 'local', 'production') */
+  ENVIRONMENT?: string;
   /**
    * Cloudflare Hyperdrive binding pointing to your Supabase Postgres database.
    * Provides `connectionString` at runtime — no raw DB credentials in the Worker.

@@ -91,7 +91,7 @@ describe('API Route Integrations', () => {
       body: rawBody,
     });
 
-    const env = { META_APP_SECRET: secret };
+    const env = { META_APP_SECRET: secret, WEBHOOK_QUEUE: { send: vi.fn() } };
     const ctx = { waitUntil: vi.fn(), passThroughOnException: vi.fn() } as unknown as ExecutionContext;
     const res = await webhookRouter.fetch(req, env, ctx);
 

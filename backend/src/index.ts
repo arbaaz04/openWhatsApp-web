@@ -134,4 +134,30 @@ app.get('/ui', swaggerUI({ url: '/doc' }));
 app.get('/', (c) => c.json({ success: true, message: 'Whatflow API Online' }));
 
 export { InboxSync } from './durable_objects/InboxSync.js';
-export default app;
+
+export default {
+  fetch: app.fetch,
+  
+  /**
+   * Cloudflare Queue consumer for async processing (e.g. Meta webhooks).
+   * Webhooks are fast-acked on the HTTP layer and handled robustly here.
+   */
+  async queue(batch: MessageBatch<any>, env: WorkerBindings, _ctx: ExecutionContext): Promise<void> {
+    const { webhookService } = await import('./services/webhookService.js');
+    import('./db/index.js').then(({ setDb, createDb }) => {
+      if (env.HYPERDRIVE) setDb(createDb(env.HYPERDRIVE.connectionString));
+    });
+
+    for (const message of batch.messages) {
+      try {
+        await webhookService.processPayload(message.body, env);
+        message.ack();
+      } catch (err) {
+        logger.error('Queue message processing failed - will retry via DLQ', { 
+          error: err instanceof Error ? err.message : String(err)
+        });
+        message.retry();
+      }
+    }
+  }
+};

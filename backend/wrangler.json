@@ -6,7 +6,25 @@
   "account_id": "4f1f004b2eace5ca5b30dec4a2b9c90d",
   "vars": {
     "ALLOWED_ORIGIN": "http://localhost:5173",
-    "SUPABASE_URL": "https://bfctfnsjobtpgolladon.supabase.co"
+    "SUPABASE_URL": "https://bfctfnsjobtpgolladon.supabase.co",
+    "ENVIRONMENT": "local"
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "WEBHOOK_QUEUE",
+        "queue": "whatflow-webhooks"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "whatflow-webhooks",
+        "max_batch_size": 20,
+        "max_batch_timeout": 1,
+        "max_retries": 5,
+        "dead_letter_queue": "whatflow-webhooks-dlq"
+      }
+    ]
   },
   "durable_objects": {
     "bindings": [

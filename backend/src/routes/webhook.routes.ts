@@ -1,6 +1,5 @@
 import { OpenAPIHono, createRoute } from '@hono/zod-openapi';
 import { z } from 'zod';
-import { webhookService } from '../services/webhookService.js';
 import { createLogger } from '../utils/logger.js';
 import { MetaWebhookPayloadSchema } from '../types/webhook.types.js';
 import { verifyWebhookSignature } from '../utils/verifyWebhookSignature.js';
@@ -97,9 +96,7 @@ webhookRouter.openapi(webhookPostRoute, async (c) => {
     entries: payload.entry.length,
   });
 
-  c.executionCtx.waitUntil(
-    webhookService.processPayload(payload, c.env)
-  );
+  await c.env.WEBHOOK_QUEUE.send(payload);
 
   return c.json({ success: true }, 200);
 });

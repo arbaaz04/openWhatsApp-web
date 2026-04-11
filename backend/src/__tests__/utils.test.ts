@@ -47,7 +47,7 @@ describe('Utils Suite', () => {
   describe('Rate Limiter — local in-memory mode', () => {
     it('should pass requests within limit', async () => {
       const middleware = rateLimiter(3);
-      const c = { req: { header: () => '10.0.0.1' }, env: {} } as never;
+      const c = { req: { header: () => '10.0.0.1' }, env: { ENVIRONMENT: 'local' } } as never;
       const next = vi.fn();
 
       await middleware(c, next);
@@ -59,7 +59,7 @@ describe('Utils Suite', () => {
 
     it('should throw ApiError 429 when limit is exceeded', async () => {
       const middleware = rateLimiter(2);
-      const c = { req: { header: () => '10.0.0.2' }, env: {} } as never;
+      const c = { req: { header: () => '10.0.0.2' }, env: { ENVIRONMENT: 'local' } } as never;
       const next = vi.fn();
 
       await middleware(c, next);
@@ -171,6 +171,7 @@ describe('Utils Suite', () => {
       SUPABASE_JWT_SECRET: 'supabase-jwt-secret',
       SUPABASE_URL: 'https://bfctfnsjobtpgolladon.supabase.co',
       INBOX_SYNC: {} as DurableObjectNamespace,
+      WEBHOOK_QUEUE: {} as any,
     };
 
     it('should not throw when all required bindings are present', () => {
