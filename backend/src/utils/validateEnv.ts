@@ -7,7 +7,6 @@ import type { WorkerBindings } from '../types/bindings.js';
  * request boundary rather than deep inside a service call.
  */
 const REQUIRED_BINDINGS: ReadonlyArray<keyof WorkerBindings> = [
-  'DATABASE_URL',
   'WEBHOOK_VERIFY_TOKEN',
   'META_APP_ID',
   'META_APP_SECRET',

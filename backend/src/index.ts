@@ -57,7 +57,7 @@ app.use('*', async (c, next) => {
 // 5. Validate all required env bindings — fail fast with 503 rather than
 //    a confusing 500 deep inside a service call
 app.use('*', async (c, next) => {
-  if (c.env?.DATABASE_URL) {
+  if (c.env?.HYPERDRIVE) {
     validateEnv(c.env);
   }
   await next();
@@ -72,10 +72,11 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// 7. DB initialisation — safe to call on every request (idempotent)
+// 7. DB initialisation via Hyperdrive — Hyperdrive pools connections at the
+//    Cloudflare edge, so cold-start latency for DB queries is drastically reduced.
 app.use('*', async (c, next) => {
-  if (c.env?.DATABASE_URL) {
-    setDb(createDb(c.env.DATABASE_URL));
+  if (c.env?.HYPERDRIVE) {
+    setDb(createDb(c.env.HYPERDRIVE.connectionString));
   }
   await next();
 });

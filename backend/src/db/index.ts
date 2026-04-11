@@ -1,46 +1,66 @@
-import { neon } from '@neondatabase/serverless';
-import { drizzle, type NeonHttpDatabase } from 'drizzle-orm/neon-http';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
 import * as schema from './schema.js';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-export type DrizzleDb = NeonHttpDatabase<typeof schema>;
+
+/**
+ * The concrete Drizzle ORM instance type backed by postgres-js.
+ * Used throughout repositories and services for type-safe query building.
+ */
+export type DrizzleDb = ReturnType<typeof createDb>;
 
 // ---------------------------------------------------------------------------
 // Factory — pure function, no side effects at module load time.
-// Call this once from the Worker fetch handler (or test setup) and pass the
-// result to setDb() so all repositories share the same instance.
 // ---------------------------------------------------------------------------
 
 /**
- * Creates a configured Drizzle ORM instance backed by Neon serverless HTTP.
+ * Creates a configured Drizzle ORM instance backed by postgres-js.
  *
- * @param databaseUrl - The Neon connection string (must be non-empty)
- * @returns A ready-to-query Drizzle instance
- * @throws {Error} if databaseUrl is empty — fail fast, not silently
+ * In production the `connectionString` comes from `c.env.HYPERDRIVE.connectionString`
+ * — Cloudflare Hyperdrive pools and caches connections at the edge for low latency.
+ *
+ * For drizzle-kit migrations (run outside the Worker), set `DATABASE_URL` in your
+ * environment and pass `process.env.DATABASE_URL` directly to this function.
+ *
+ * @param connectionString - A valid PostgreSQL connection string
+ * @returns A ready-to-query Drizzle instance scoped to this request
  */
-export function createDb(databaseUrl: string): DrizzleDb {
-  if (!databaseUrl) {
+export function createDb(connectionString: string): DrizzleDb {
+  if (!connectionString) {
     throw new Error(
-      'DATABASE_URL is required but was not provided. ' +
-      'Set the binding in wrangler.json (production) or .dev.vars (local dev).'
+      'A database connection string is required. ' +
+      'In Workers: pass c.env.HYPERDRIVE.connectionString. ' +
+      'For migrations: export DATABASE_URL before running drizzle-kit.'
     );
   }
-  const sql = neon(databaseUrl);
-  return drizzle(sql, { schema });
+
+  const client = postgres(connectionString, {
+    ssl: 'require',
+    // One logical connection per Worker invocation — Hyperdrive handles pooling
+    // at the edge, so we don't need more than one per isolate.
+    max: 1,
+    idle_timeout: 20,
+    connect_timeout: 10,
+    // Disable prepare — required for Supabase Transaction mode pooler (pgBouncer/Supavisor)
+    // which does not support extended query protocol over the same connection.
+    prepare: false,
+  });
+
+  return drizzle(client, { schema });
 }
 
 // ---------------------------------------------------------------------------
 // Module-level singleton with explicit lifecycle management.
-// Repositories call getDb() — they never import a pre-initialised instance.
 // ---------------------------------------------------------------------------
 let _db: DrizzleDb | null = null;
 
 /**
- * Injects the shared database instance.
- * Must be called before any repository function executes.
- * Idempotent — safe to call on every Worker request (Cloudflare reuses isolates).
+ * Injects the shared database instance for the current request.
+ * Called once per request in the index.ts middleware chain.
+ * Idempotent — safe to call on every Worker request.
  */
 export function setDb(instance: DrizzleDb): void {
   _db = instance;
@@ -48,19 +68,21 @@ export function setDb(instance: DrizzleDb): void {
 
 /**
  * Returns the active database instance.
- * @throws {Error} if setDb() was never called — surfaces configuration errors immediately.
+ * @throws {Error} if setDb() has not been called — surfaces missing init immediately.
  */
 export function getDb(): DrizzleDb {
   if (!_db) {
     throw new Error(
-      'Database not initialised. Call setDb(createDb(databaseUrl)) before making queries.'
+      'Database not initialised. Call setDb(createDb(connectionString)) before making queries.'
     );
   }
   return _db;
 }
 
-// Convenience re-export used by repositories — forwards to getDb() at call-time,
-// not at import-time, so module load order does not matter.
+/**
+ * Lazy proxy — resolves to the active DB instance at call-time, not at import-time.
+ * Used by repositories so module import order does not matter.
+ */
 export const db: DrizzleDb = new Proxy({} as DrizzleDb, {
   get(_target, prop) {
     return getDb()[prop as keyof DrizzleDb];

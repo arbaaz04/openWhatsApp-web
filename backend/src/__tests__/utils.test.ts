@@ -162,7 +162,7 @@ describe('Utils Suite', () => {
 
   describe('validateEnv', () => {
     const validEnv: WorkerBindings = {
-      DATABASE_URL: 'postgres://localhost/test',
+      HYPERDRIVE: { connectionString: 'postgresql://localhost/test' } as Hyperdrive,
       WEBHOOK_VERIFY_TOKEN: 'secret',
       META_APP_ID: 'app123',
       META_APP_SECRET: 'appsecret',
@@ -176,8 +176,8 @@ describe('Utils Suite', () => {
       expect(() => validateEnv(validEnv)).not.toThrow();
     });
 
-    it('should throw ApiError 503 when DATABASE_URL is missing', () => {
-      const env = { ...validEnv, DATABASE_URL: '' };
+    it('should throw ApiError 503 when a required binding is missing', () => {
+      const env = { ...validEnv, WEBHOOK_VERIFY_TOKEN: '' };
       expect(() => validateEnv(env)).toThrow(
         expect.objectContaining({ statusCode: 503, code: 'MISCONFIGURED' })
       );

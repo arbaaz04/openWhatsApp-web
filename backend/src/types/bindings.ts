@@ -9,7 +9,12 @@
  * Local dev values go in `.dev.vars` (gitignored).
  */
 export interface WorkerBindings {
-  DATABASE_URL: string;
+  /**
+   * Cloudflare Hyperdrive binding pointing to your Supabase Postgres database.
+   * Provides `connectionString` at runtime — no raw DB credentials in the Worker.
+   * Create with: `wrangler hyperdrive create whatflow-db --connection-string="postgresql://..."`
+   */
+  HYPERDRIVE: Hyperdrive;
   WEBHOOK_VERIFY_TOKEN: string;
   META_APP_ID: string;
   META_APP_SECRET: string;
