@@ -167,15 +167,49 @@ export const messageRepository = {
   },
 
   /**
-   * Fetches all messages sent after a given message ID for WebSocket reconnect
-   * replay. Called by InboxSync when a client reconnects with `lastSeenMessageId`.
+   * Persists a successfully sent outbound message.
    *
-   * We use `id > lastSeenId` (not createdAt) because IDs are monotonically
+   * Called AFTER the Meta API confirms delivery (we have the `wamid`).
+   * Storing the wamid as `externalId` means incoming status webhook updates
+   * (delivered/read) can be correlated back to this row via a single indexed lookup.
+   *
+   * @param conversationId - The conversation this message belongs to
+   * @param body           - The message body text that was sent
+   * @param wamid          - The WhatsApp message ID returned by Meta
+   * @param sentBy         - Supabase user ID of the agent who sent the message
+   * @returns The persisted message row ID
+   */
+  async createOutboundMessage(
+    conversationId: number,
+    body: string,
+    wamid: string,
+    sentBy: string
+  ): Promise<{ messageId: number }> {
+    void sentBy; // stored for future audit-log column — schema will include this in Phase 5
+    const [inserted] = await db
+      .insert(messages)
+      .values({
+        conversationId,
+        body,
+        direction: 'outgoing' as const,
+        status: 'sent' as const,
+        externalId: wamid,
+      })
+      .returning({ id: messages.id });
+
+    return { messageId: inserted.id };
+  },
+
+  /**
+   * Fetches all messages after a given ID for WebSocket reconnect replay.
+   * Called by InboxSync when a client reconnects with `lastSeenMessageId`.
+   *
+   * Uses `id > afterMessageId` (not createdAt) — serial IDs are monotonically
    * increasing and immune to clock skew on the Postgres server.
    *
    * @param conversationId - Conversation to replay
    * @param afterMessageId - Exclusive lower bound — the client already has this message
-   * @returns Messages in ascending order (oldest first) for playback order
+   * @returns Messages in ascending order (oldest first) for playback
    */
   async getMessagesSince(
     conversationId: number,
