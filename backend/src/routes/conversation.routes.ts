@@ -13,7 +13,7 @@ import { ApiError } from '../utils/errors.js';
 import { db } from '../db/index.js';
 import { conversations, channels } from '../db/schema.js';
 import { messageRepository } from '../repositories/messageRepository.js';
-import { sendTextMessage } from '../utils/metaApiClient.js';
+import { sendWhatsAppMessage } from '../utils/metaApiClient.js';
 import { decrypt } from '../utils/encryption.js';
 import { eq } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
@@ -191,17 +191,29 @@ conversationRouter.openapi(listMessagesRoute, async (c) => {
 // POST /:conversationId/messages — send an outbound message
 // ---------------------------------------------------------------------------
 
-/** Zod body schema with max-length enforcement and whitespace sanitisation. */
 const sendMessageBody = z.object({
+  /** Type of message to send, defaults to text */
+  type: z.enum([
+    'text', 'image', 'document', 'audio', 'video', 'sticker', 
+    'location', 'contacts', 'interactive', 'template'
+  ]).default('text'),
+  
   /**
-   * Message body text. WhatsApp supports up to 4096 UTF-8 characters.
-   * We enforce a slightly lower limit to stay safely within the API's envelope.
+   * Message body fallback text. For text messages, this is the message.
+   * For other messages, this acts as an internal fallback / summary in the DB.
    */
   body: z
     .string()
     .min(1, 'Message body cannot be empty')
     .max(4000, 'Message body cannot exceed 4000 characters')
     .transform((s) => s.trim()),
+
+  /**
+   * The actual Meta payload object for rich messages.
+   * e.g., { text: { body: "hi" } } or { image: { id: "..." } } or { interactive: { ... } }
+   * If omitted, a basic text payload is auto-generated for 'text' type.
+   */
+  payload: z.record(z.string(), z.unknown()).optional(),
 });
 
 const sendMessageRoute = createRoute({
@@ -242,7 +254,7 @@ conversationRouter.openapi(sendMessageRoute, async (c) => {
   const log = createLogger({ requestId: c.get('requestId') });
   const userId = c.get('userId');
   const conversationId = parseInt(c.req.param('conversationId'), 10);
-  const { body } = c.req.valid('json');
+  const { type, body, payload } = c.req.valid('json');
 
   // 1. Resolve conversation and enforce team ownership in one DB query
   const row = await resolveAndAuthorize(conversationId, c.get('teamId') ?? '');
@@ -259,14 +271,19 @@ conversationRouter.openapi(sendMessageRoute, async (c) => {
     conversationId,
     phoneNumberId: row.whatsappId,
     recipientNumber: row.customerNumber,
+    type,
+    hasPayload: !!payload,
     bodyLength: body.length,
   });
 
-  const { wamid, recipientWaId } = await sendTextMessage({
+  const messagePayload = payload ?? (type === 'text' ? { text: { body, preview_url: false } } : {});
+
+  const { wamid, recipientWaId } = await sendWhatsAppMessage({
     phoneNumberId: row.whatsappId,
     accessToken,
     recipientNumber: row.customerNumber,
-    body,
+    type,
+    messagePayload,
   });
 
   log.info('Message sent via Meta API', {

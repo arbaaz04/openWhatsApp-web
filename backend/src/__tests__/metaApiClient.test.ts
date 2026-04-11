@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { sendTextMessage, MetaApiError } from '../utils/metaApiClient.js';
+import { sendWhatsAppMessage, MetaApiError } from '../utils/metaApiClient.js';
 import { ApiError } from '../utils/errors.js';
 
 // ---------------------------------------------------------------------------
@@ -28,14 +28,15 @@ const BASE_OPTIONS = {
   phoneNumberId: 'phone123',
   accessToken: 'token_abc',
   recipientNumber: '+14155551234',
-  body: 'Hello, how can I help?',
+  type: 'text',
+  messagePayload: { text: { body: 'Hello, how can I help?', preview_url: false } },
 };
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('sendTextMessage', () => {
+describe('sendWhatsAppMessage', () => {
   beforeEach(() => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(makeMetaSuccessResponse());
   });
@@ -45,13 +46,13 @@ describe('sendTextMessage', () => {
   });
 
   it('returns the wamid and wa_id on success', async () => {
-    const result = await sendTextMessage(BASE_OPTIONS);
+    const result = await sendWhatsAppMessage(BASE_OPTIONS);
     expect(result.wamid).toBe('wamid.abc123');
     expect(result.recipientWaId).toBe('14155551234');
   });
 
   it('sends a POST to the correct Meta Graph API endpoint', async () => {
-    await sendTextMessage(BASE_OPTIONS);
+    await sendWhatsAppMessage(BASE_OPTIONS);
 
     const [url, init] = (vi.mocked(globalThis.fetch).mock.calls[0] as [string, RequestInit]);
     expect(url).toContain('/v25.0/phone123/messages');
@@ -63,7 +64,7 @@ describe('sendTextMessage', () => {
   });
 
   it('includes the correct WhatsApp message payload', async () => {
-    await sendTextMessage(BASE_OPTIONS);
+    await sendWhatsAppMessage(BASE_OPTIONS);
     const [, init] = (vi.mocked(globalThis.fetch).mock.calls[0] as [string, RequestInit]);
     const body = JSON.parse(init.body as string) as Record<string, unknown>;
 
@@ -81,7 +82,7 @@ describe('sendTextMessage', () => {
       makeMetaErrorResponse(131026, 'Business triggered re-engagement outside window', 400)
     );
 
-    await expect(sendTextMessage(BASE_OPTIONS)).rejects.toThrow(MetaApiError);
+    await expect(sendWhatsAppMessage(BASE_OPTIONS)).rejects.toThrow(MetaApiError);
     // Only one fetch call — 4xx should not be retried
     expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(1);
   });
@@ -92,7 +93,7 @@ describe('sendTextMessage', () => {
     );
 
     try {
-      await sendTextMessage(BASE_OPTIONS);
+      await sendWhatsAppMessage(BASE_OPTIONS);
     } catch (err) {
       expect(err).toBeInstanceOf(MetaApiError);
       expect((err as MetaApiError).statusCode).toBe(422);
@@ -106,7 +107,7 @@ describe('sendTextMessage', () => {
     );
 
     try {
-      await sendTextMessage(BASE_OPTIONS);
+      await sendWhatsAppMessage(BASE_OPTIONS);
     } catch (err) {
       expect((err as MetaApiError).statusCode).toBe(429);
     }
@@ -118,7 +119,7 @@ describe('sendTextMessage', () => {
 
     vi.useFakeTimers();
     try {
-      const promise = sendTextMessage(BASE_OPTIONS);
+      const promise = sendWhatsAppMessage(BASE_OPTIONS);
       // Attach handler BEFORE advancing timers so the rejection is never "unhandled"
       const assertion = expect(promise).rejects.toSatisfy((err: unknown) =>
         err instanceof ApiError || err instanceof MetaApiError
@@ -137,7 +138,7 @@ describe('sendTextMessage', () => {
       Object.assign(new Error('Aborted'), { name: 'AbortError' })
     );
 
-    await expect(sendTextMessage(BASE_OPTIONS)).rejects.toSatisfy((err: unknown) => {
+    await expect(sendWhatsAppMessage(BASE_OPTIONS)).rejects.toSatisfy((err: unknown) => {
       return err instanceof ApiError && (err as ApiError).statusCode === 504;
     });
   });
@@ -150,7 +151,7 @@ describe('sendTextMessage', () => {
       )
     );
 
-    await expect(sendTextMessage(BASE_OPTIONS)).rejects.toSatisfy((err: unknown) => {
+    await expect(sendWhatsAppMessage(BASE_OPTIONS)).rejects.toSatisfy((err: unknown) => {
       return err instanceof ApiError && (err as ApiError).statusCode === 502;
     });
   });

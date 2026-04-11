@@ -79,24 +79,26 @@ export class MetaApiError extends ApiError {
 // ---------------------------------------------------------------------------
 
 /**
- * Sends a plain-text WhatsApp message via the Cloud API.
+ * Sends a rich WhatsApp message via the Cloud API (text, media, interactive, etc).
  *
- * @param options.phoneNumberId  - The sender's WhatsApp phone number ID (from your Meta App)
- * @param options.accessToken    - The decrypted channel access token
+ * @param options.phoneNumberId   - The sender's WhatsApp phone number ID (from your Meta App)
+ * @param options.accessToken     - The decrypted channel access token
  * @param options.recipientNumber - Recipient in E.164 format (e.g. "+14155551234")
- * @param options.body           - Message body text (max 4096 UTF-8 characters)
+ * @param options.type            - Message type ('text', 'image', 'interactive', 'template', etc)
+ * @param options.messagePayload  - The type-specific payload object (e.g. { text: { body: "hi" } } or { interactive: { ... } })
  * @returns Resolved wamid and confirmed wa_id once Meta has accepted the message
  *
  * @throws {MetaApiError}  Meta returned an error response (window closed, rate limit, etc.)
  * @throws {ApiError 503}  Network failure persists after all retries
  */
-export async function sendTextMessage(options: {
+export async function sendWhatsAppMessage(options: {
   phoneNumberId: string;
   accessToken: string;
   recipientNumber: string;
-  body: string;
+  type: string;
+  messagePayload: Record<string, unknown>;
 }): Promise<SentMessage> {
-  const { phoneNumberId, accessToken, recipientNumber, body } = options;
+  const { phoneNumberId, accessToken, recipientNumber, type, messagePayload } = options;
   const log = createLogger({ requestId: 'meta-api' });
 
   const url = `${META_GRAPH_BASE}/${phoneNumberId}/messages`;
@@ -105,11 +107,8 @@ export async function sendTextMessage(options: {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
     to: recipientNumber,
-    type: 'text',
-    text: {
-      preview_url: false,
-      body,
-    },
+    type,
+    ...messagePayload,
   });
 
   let lastError: unknown;
