@@ -16,6 +16,7 @@ export interface WorkerBindings {
    */
   HYPERDRIVE: Hyperdrive;
   WEBHOOK_VERIFY_TOKEN: string;
+  /** Meta App credentials — required for webhook verification and sending messages */
   META_APP_ID: string;
   META_APP_SECRET: string;
   /** AES-256-GCM key — 64-char hex string (32 bytes). Used to encrypt access tokens at rest. */
@@ -24,6 +25,8 @@ export interface WorkerBindings {
   ALLOWED_ORIGIN: string;
   /** Supabase JWT signing secret — found in Supabase dashboard → Settings → API */
   SUPABASE_JWT_SECRET: string;
+  /** Supabase project URL — used to construct auth API endpoints */
+  SUPABASE_URL: string;
   INBOX_SYNC: DurableObjectNamespace;
   RATE_LIMITER?: {
     limit(options: { key: string }): Promise<{ success: boolean }>;

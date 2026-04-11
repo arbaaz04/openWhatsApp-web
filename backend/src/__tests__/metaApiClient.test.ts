@@ -112,22 +112,23 @@ describe('sendTextMessage', () => {
     }
   });
 
-  it('retries on 5xx and eventually throws ApiError 503 when all retries fail', async () => {
+  it('retries on 5xx and eventually throws after all retries fail', async () => {
     const server500 = makeMetaErrorResponse(131000, 'Temporary server error', 500);
     vi.mocked(globalThis.fetch).mockResolvedValue(server500);
 
-    // Speed up the test by mocking sleep (the retry backoff)
     vi.useFakeTimers();
-    const promise = sendTextMessage(BASE_OPTIONS);
-    // Advance timers through all retry backoffs
-    await vi.runAllTimersAsync();
-    vi.useRealTimers();
+    try {
+      const promise = sendTextMessage(BASE_OPTIONS);
+      // Attach handler BEFORE advancing timers so the rejection is never "unhandled"
+      const assertion = expect(promise).rejects.toSatisfy((err: unknown) =>
+        err instanceof ApiError || err instanceof MetaApiError
+      );
+      await vi.runAllTimersAsync();
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
 
-    await expect(promise).rejects.toSatisfy((err: unknown) => {
-      return err instanceof ApiError || err instanceof MetaApiError;
-    });
-
-    // Should have retried MAX_RETRIES (3) times
     expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(3);
   }, 15_000);
 

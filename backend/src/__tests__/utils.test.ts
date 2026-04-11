@@ -169,6 +169,7 @@ describe('Utils Suite', () => {
       DATA_ENCRYPTION_KEY: 'a'.repeat(64),
       ALLOWED_ORIGIN: 'https://app.whatflow.io',
       SUPABASE_JWT_SECRET: 'supabase-jwt-secret',
+      SUPABASE_URL: 'https://bfctfnsjobtpgolladon.supabase.co',
       INBOX_SYNC: {} as DurableObjectNamespace,
     };
 
@@ -184,10 +185,10 @@ describe('Utils Suite', () => {
     });
 
     it('should list all missing bindings in the error message', () => {
-      const env = { ...validEnv, META_APP_ID: '', META_APP_SECRET: '' };
+      const env = { ...validEnv, DATA_ENCRYPTION_KEY: '', SUPABASE_URL: '' };
       expect(() => validateEnv(env)).toThrow(
         expect.objectContaining({
-          message: expect.stringContaining('META_APP_ID'),
+          message: expect.stringContaining('DATA_ENCRYPTION_KEY'),
         })
       );
     });

@@ -4,12 +4,7 @@
   "compatibility_date": "2024-04-10",
   "account_id": "4f1f004b2eace5ca5b30dec4a2b9c90d",
   "vars": {
-    "META_APP_ID": "",
-    "META_APP_SECRET": "",
-    "WEBHOOK_VERIFY_TOKEN": "",
-    "DATA_ENCRYPTION_KEY": "",
     "ALLOWED_ORIGIN": "http://localhost:5173",
-    "SUPABASE_JWT_SECRET": "",
     "SUPABASE_URL": "https://bfctfnsjobtpgolladon.supabase.co"
   },
   "durable_objects": {
