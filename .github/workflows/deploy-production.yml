@@ -7,6 +7,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -14,10 +16,48 @@ jobs:
           node-version: 22
       - run: npm ci
 
+      - name: Backend Deploy Preflight
+        working-directory: ./backend
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          node -e '
+            const fs = require("fs");
+            const cfg = JSON.parse(fs.readFileSync("wrangler.json", "utf8"));
+            const prod = cfg.env && cfg.env.production;
+            if (!prod || !prod.vars) {
+              throw new Error("Missing env.production.vars in backend/wrangler.json");
+            }
+            const required = ["ALLOWED_ORIGIN", "SUPABASE_URL", "ENVIRONMENT"];
+            for (const key of required) {
+              if (!prod.vars[key] || String(prod.vars[key]).trim() === "") {
+                throw new Error(`Missing production var: ${key}`);
+              }
+            }
+            if (String(prod.vars.ENVIRONMENT).toLowerCase() !== "production") {
+              throw new Error("env.production.vars.ENVIRONMENT must be production");
+            }
+            if (String(prod.vars.ALLOWED_ORIGIN).includes("localhost")) {
+              throw new Error("env.production.vars.ALLOWED_ORIGIN must not point to localhost");
+            }
+          '
+
+          npx wrangler whoami >/dev/null
+          npx wrangler secret list --env production > secrets.txt
+
+          for name in SUPABASE_JWT_SECRET DATA_ENCRYPTION_KEY WEBHOOK_VERIFY_TOKEN META_APP_ID META_APP_SECRET; do
+            if ! grep -q "$name" secrets.txt; then
+              echo "Missing required Cloudflare secret in production: $name"
+              exit 1
+            fi
+          done
+
       # Deploy Backend via Wrangler
       - name: Deploy Backend
         working-directory: ./backend
-        run: npx wrangler deploy
+        run: npx wrangler deploy --env production
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 

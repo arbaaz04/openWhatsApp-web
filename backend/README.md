@@ -42,10 +42,16 @@ You need to define several secrets and bindings for the Worker to run successful
 
 Non-sensitive configuration. These can be pushed to version control.
 
+Use environment-scoped variables so local and production values never drift:
+
+- top-level `vars`: local development defaults
+- `env.production.vars`: production values used by CI/CD deploys
+
 | Variable | Description |
 |---|---|
 | `ALLOWED_ORIGIN` | The frontend domain (e.g., `https://app.whatflow.io` or `http://localhost:5173`) |
 | `SUPABASE_URL` | Your Supabase project connection string |
+| `ENVIRONMENT` | `local` in dev and `production` in production |
 
 ### 2. Hyperdrive Binding (`wrangler.json`)
 
@@ -100,10 +106,29 @@ The backend includes a comprehensive Vitest testing suite focusing heavily on re
 
 When you're ready to deploy to Cloudflare:
 
-1. Ensure your production Hyperdrive config is in `wrangler.json`.
+1. Ensure `env.production.vars` in `wrangler.json` is correct (especially `ALLOWED_ORIGIN` and `ENVIRONMENT=production`).
 2. Upload all required secrets to production (`npx wrangler secret put ...`).
-3. Deploy the worker:
+3. Verify required secrets exist in production:
 
 ```bash
-npm run deploy
+npx wrangler secret list --env production
 ```
+
+4. Deploy the worker to the production environment:
+
+```bash
+npx wrangler deploy --env production
+```
+
+## Readiness Endpoint
+
+The backend exposes a readiness probe at:
+
+`GET /health/ready`
+
+This endpoint returns `200` only when critical runtime bindings are present:
+
+- required environment bindings
+- webhook queue binding (`WEBHOOK_QUEUE`)
+- durable object binding (`INBOX_SYNC`)
+- hyperdrive binding (`HYPERDRIVE`)

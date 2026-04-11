@@ -9,6 +9,15 @@
     "SUPABASE_URL": "https://bfctfnsjobtpgolladon.supabase.co",
     "ENVIRONMENT": "local"
   },
+  "env": {
+    "production": {
+      "vars": {
+        "ALLOWED_ORIGIN": "https://app.whatflow.io",
+        "SUPABASE_URL": "https://bfctfnsjobtpgolladon.supabase.co",
+        "ENVIRONMENT": "production"
+      }
+    }
+  },
   "queues": {
     "producers": [
       {

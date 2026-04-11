@@ -153,6 +153,40 @@ app.doc('/doc', {
   info: { version: '1.0.0', title: 'WhatFlow API' },
 });
 app.get('/ui', swaggerUI({ url: '/doc' }));
+
+app.get('/health/ready', (c) => {
+  const checks = {
+    envBindings: true,
+    queueBinding: !!c.env.WEBHOOK_QUEUE,
+    durableObjectBinding: !!c.env.INBOX_SYNC,
+    hyperdriveBinding: !!c.env.HYPERDRIVE?.connectionString,
+  };
+
+  const allHealthy = Object.values(checks).every(Boolean);
+
+  if (!allHealthy) {
+    return c.json(
+      {
+        success: false,
+        status: 'not_ready',
+        checks,
+      },
+      503
+    );
+  }
+
+  return c.json(
+    {
+      success: true,
+      status: 'ready',
+      checks,
+      environment: c.env.ENVIRONMENT ?? 'unknown',
+      timestamp: new Date().toISOString(),
+    },
+    200
+  );
+});
+
 app.get('/', (c) => c.json({ success: true, message: 'Whatflow API Online' }));
 
 export { InboxSync } from './durable_objects/InboxSync.js';
