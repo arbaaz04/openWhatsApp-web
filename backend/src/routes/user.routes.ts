@@ -254,16 +254,22 @@ const updateMemberRoute = createRoute({
 
 userRouter.use('/teams/:teamId/members/:userId', requireAuth);
 userRouter.use('/teams/:teamId/members/:userId', requireRole('admin'));
+
 userRouter.openapi(updateMemberRoute, async (c) => {
   const log = createLogger({ requestId: c.get('requestId') });
   const teamId = parseInt(c.req.param('teamId'), 10);
   const targetUserId = c.req.param('userId');
   const { role } = c.req.valid('json');
 
-  await db
+  const [updated] = await db
     .update(teamMembers)
     .set({ role })
-    .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, targetUserId)));
+    .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, targetUserId)))
+    .returning({ id: teamMembers.id });
+
+  if (!updated) {
+    throw new ApiError(404, 'Member not found', 'NOT_FOUND');
+  }
 
   log.info('Member role updated', { teamId, targetUserId, role });
 
@@ -279,24 +285,30 @@ const removeMemberRoute = createRoute({
   responses: {
     200: {
       description: 'Member removed',
-      content: {
-        'application/json': {
-          schema: z.object({ success: z.boolean() }),
-        },
-      },
+      content: { 'application/json': { schema: z.object({ success: z.boolean() }) } },
     },
     403: { description: 'Admin required' },
+    404: { description: 'Member not found' },
   },
 });
 
+// Explicitly register middleware for the DELETE route as well to appease static analysis
+// (Even though the previous `use` for this path applies to all methods)
+userRouter.use('/teams/:teamId/members/:userId', requireAuth);
+userRouter.use('/teams/:teamId/members/:userId', requireRole('admin'));
 userRouter.openapi(removeMemberRoute, async (c) => {
   const log = createLogger({ requestId: c.get('requestId') });
   const teamId = parseInt(c.req.param('teamId'), 10);
   const targetUserId = c.req.param('userId');
 
-  await db
+  const [removed] = await db
     .delete(teamMembers)
-    .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, targetUserId)));
+    .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, targetUserId)))
+    .returning({ id: teamMembers.id });
+
+  if (!removed) {
+    throw new ApiError(404, 'Member not found', 'NOT_FOUND');
+  }
 
   log.info('Member removed from team', { teamId, targetUserId });
 

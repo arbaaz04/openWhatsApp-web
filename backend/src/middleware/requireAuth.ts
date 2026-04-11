@@ -65,7 +65,8 @@ function decodeJwtPayload(token: string): SupabaseJwtPayload {
  */
 async function verifySupabaseJwt(
   token: string,
-  secret: string
+  secret: string,
+  expectedIssuer: string | undefined
 ): Promise<SupabaseJwtPayload> {
   const parts = token.split('.');
   if (parts.length !== 3) {
@@ -112,6 +113,10 @@ async function verifySupabaseJwt(
     throw new ApiError(401, 'JWT audience mismatch', 'INVALID_TOKEN');
   }
 
+  if (expectedIssuer && payload.iss !== `${expectedIssuer}/auth/v1`) {
+    throw new ApiError(401, 'JWT issuer mismatch', 'INVALID_TOKEN');
+  }
+
   return payload;
 }
 
@@ -151,7 +156,7 @@ export async function requireAuth(
     throw new ApiError(503, 'Auth service not configured', 'MISCONFIGURED');
   }
 
-  const payload = await verifySupabaseJwt(token, jwtSecret);
+  const payload = await verifySupabaseJwt(token, jwtSecret, c.env.SUPABASE_URL);
 
   c.set('userId', payload.sub);
   c.set('userEmail', payload.email ?? '');

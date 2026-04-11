@@ -11,11 +11,11 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { createLogger } from '../utils/logger.js';
 import { ApiError } from '../utils/errors.js';
 import { db } from '../db/index.js';
-import { conversations, channels } from '../db/schema.js';
+import { conversations, channels, teamMembers } from '../db/schema.js';
 import { messageRepository } from '../repositories/messageRepository.js';
 import { sendWhatsAppMessage } from '../utils/metaApiClient.js';
 import { decrypt } from '../utils/encryption.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
 
 // ---------------------------------------------------------------------------
@@ -53,7 +53,7 @@ conversationRouter.use('/:conversationId/*', requireAuth);
  */
 async function resolveAndAuthorize(
   conversationId: number,
-  callerTeamId: string
+  callerUserId: string
 ): Promise<{
   id: number;
   teamId: number;
@@ -73,15 +73,12 @@ async function resolveAndAuthorize(
     })
     .from(conversations)
     .innerJoin(channels, eq(channels.id, conversations.channelId))
-    .where(eq(conversations.id, conversationId))
+    .innerJoin(teamMembers, eq(teamMembers.teamId, channels.teamId))
+    .where(and(eq(conversations.id, conversationId), eq(teamMembers.userId, callerUserId)))
     .limit(1);
 
   if (!row) {
     throw new ApiError(404, 'Conversation not found', 'NOT_FOUND');
-  }
-
-  if (String(row.teamId) !== callerTeamId) {
-    throw new ApiError(403, 'You do not have access to this conversation', 'FORBIDDEN');
   }
 
   return row;
@@ -151,9 +148,8 @@ conversationRouter.openapi(listMessagesRoute, async (c) => {
   const conversationId = parseInt(c.req.param('conversationId'), 10);
   const { before, limit } = c.req.valid('query');
 
-  // Team guard: teamId is set by requireRole or defaults to '' when not present.
-  // For inbox access (subordinate role) we skip requireRole and do a DB-level check.
-  await resolveAndAuthorize(conversationId, c.get('teamId') ?? '');
+  // Authorize based on userId since conversations span all teams a user belongs to
+  await resolveAndAuthorize(conversationId, c.get('userId'));
 
   const { items, hasMore } = await messageRepository.listMessages(conversationId, {
     before: before !== undefined ? parseInt(before, 10) : undefined,
@@ -257,7 +253,7 @@ conversationRouter.openapi(sendMessageRoute, async (c) => {
   const { type, body, payload } = c.req.valid('json');
 
   // 1. Resolve conversation and enforce team ownership in one DB query
-  const row = await resolveAndAuthorize(conversationId, c.get('teamId') ?? '');
+  const row = await resolveAndAuthorize(conversationId, userId);
 
   if (!row.whatsappId) {
     throw new ApiError(422, 'This channel does not have a configured WhatsApp phone number ID', 'CHANNEL_MISCONFIGURED');
