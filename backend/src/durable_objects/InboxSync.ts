@@ -235,12 +235,17 @@ export class InboxSync {
 
     if (!conversation) return;
 
-    const missed = await messageRepository.getMessagesSince(conversation.id, lastSeenMessageId);
+    const { items: missed, hasMore, nextCursor } = await messageRepository.getMessagesSince(
+      conversation.id,
+      lastSeenMessageId
+    );
 
     log.info('Replaying missed messages to reconnected client', {
       phoneNumberId,
       lastSeenMessageId,
       count: missed.length,
+      hasMore,
+      nextCursor,
     });
 
     for (const msg of missed) {
@@ -253,7 +258,12 @@ export class InboxSync {
 
     // Signal the frontend that replay is complete and live mode starts now
     try {
-      ws.send(JSON.stringify({ type: 'sync_complete', replayedCount: missed.length }));
+      ws.send(JSON.stringify({
+        type: 'sync_complete',
+        replayedCount: missed.length,
+        hasMore,
+        nextCursor,
+      }));
     } catch {
       // Socket closed — ignore
     }

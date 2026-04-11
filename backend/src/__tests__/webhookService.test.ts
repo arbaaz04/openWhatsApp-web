@@ -30,7 +30,13 @@ const basePayload = (overrides?: Partial<MetaWebhookPayload>): MetaWebhookPayloa
 });
 
 describe('Webhook Service — Payload Processing', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(messageRepository.processIncomingMessage).mockResolvedValue({
+      messageId: 1,
+      conversationId: 1,
+    });
+  });
 
   it('should process a valid text message and call the repository', async () => {
     await webhookService.processPayload(basePayload());

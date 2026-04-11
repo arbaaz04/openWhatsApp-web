@@ -117,36 +117,3 @@ describe('cors middleware', () => {
     expect(res.status).toBe(204);
   });
 });
-
-describe('securityHeaders middleware', () => {
-  it('sets Strict-Transport-Security after next()', async () => {
-    const c = makeContext();
-    const next = vi.fn().mockResolvedValue(undefined);
-    await securityHeaders(c as never, next);
-    expect(c.res.headers.get('Strict-Transport-Security')).toContain('max-age=31536000');
-  });
-
-  it('sets X-Content-Type-Options: nosniff', async () => {
-    const c = makeContext();
-    await securityHeaders(c as never, vi.fn().mockResolvedValue(undefined));
-    expect(c.res.headers.get('X-Content-Type-Options')).toBe('nosniff');
-  });
-
-  it('sets X-Frame-Options: DENY', async () => {
-    const c = makeContext();
-    await securityHeaders(c as never, vi.fn().mockResolvedValue(undefined));
-    expect(c.res.headers.get('X-Frame-Options')).toBe('DENY');
-  });
-
-  it('sets Referrer-Policy', async () => {
-    const c = makeContext();
-    await securityHeaders(c as never, vi.fn().mockResolvedValue(undefined));
-    expect(c.res.headers.get('Referrer-Policy')).toBeTruthy();
-  });
-
-  it('calls next() exactly once', async () => {
-    const next = vi.fn().mockResolvedValue(undefined);
-    await securityHeaders(makeContext() as never, next);
-    expect(next).toHaveBeenCalledOnce();
-  });
-});

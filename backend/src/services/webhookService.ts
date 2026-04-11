@@ -46,7 +46,7 @@ export const webhookService = {
           logger.info('Processing incoming message', { customerPhone, phoneNumberId });
 
           try {
-            await messageRepository.processIncomingMessage(
+            const { messageId } = await messageRepository.processIncomingMessage(
               phoneNumberId,
               customerPhone,
               bodyText,
@@ -64,6 +64,7 @@ export const webhookService = {
                     'x-internal-auth': env.META_APP_SECRET,
                   },
                   body: JSON.stringify({
+                      messageId,
                     customerPhone,
                     bodyText,
                     timestamp: new Date().toISOString(),

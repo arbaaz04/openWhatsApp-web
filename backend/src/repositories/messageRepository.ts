@@ -7,6 +7,8 @@ import { ApiError } from '../utils/errors.js';
 const DEFAULT_PAGE_SIZE = 50;
 /** Hard cap — prevents clients requesting absurd page sizes. */
 const MAX_PAGE_SIZE = 200;
+/** Replay page cap for reconnect catch-up to avoid unbounded memory usage. */
+const REPLAY_PAGE_SIZE = 500;
 
 /**
  * A single message row returned from the repository.
@@ -229,12 +231,16 @@ export const messageRepository = {
    *
    * @param conversationId - Conversation to replay
    * @param afterMessageId - Exclusive lower bound — the client already has this message
-   * @returns Messages in ascending order (oldest first) for playback
+   * @returns A bounded page in ascending order (oldest first) for playback,
+   *   plus `hasMore` / `nextCursor` for follow-up replay requests.
    */
   async getMessagesSince(
     conversationId: number,
-    afterMessageId: number
-  ): Promise<MessageRow[]> {
+    afterMessageId: number,
+    options: { limit?: number } = {}
+  ): Promise<{ items: MessageRow[]; hasMore: boolean; nextCursor: number | null }> {
+    const limit = Math.min(options.limit ?? REPLAY_PAGE_SIZE, REPLAY_PAGE_SIZE);
+
     const rows = await db
       .select()
       .from(messages)
@@ -244,8 +250,13 @@ export const messageRepository = {
           gt(messages.id, afterMessageId)
         )
       )
-      .orderBy(asc(messages.id)); // ascending — oldest first for playback
+      .orderBy(asc(messages.id))
+      .limit(limit + 1); // fetch one extra row to determine hasMore
 
-    return rows as MessageRow[];
+    const hasMore = rows.length > limit;
+    const items = (hasMore ? rows.slice(0, limit) : rows) as MessageRow[];
+    const nextCursor = items.length > 0 ? items[items.length - 1].id : null;
+
+    return { items, hasMore, nextCursor };
   },
 };

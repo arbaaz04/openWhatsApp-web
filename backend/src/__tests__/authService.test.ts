@@ -48,7 +48,6 @@ describe('Auth Service — Token Exchange', () => {
     expect(db.insert).toHaveBeenCalledOnce();
 
     // Verify the token was encrypted before being inserted (not plaintext)
-    const insertedValues = vi.mocked(db.insert).mock.results[0];
     const valuesCall = insertChain.values.mock.calls[0][0] as { accessToken: string };
     expect(valuesCall.accessToken).not.toBe('EAAreal_token');
     expect(valuesCall.accessToken).toContain(':'); // iv:ciphertext format

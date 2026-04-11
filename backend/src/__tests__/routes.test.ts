@@ -120,7 +120,7 @@ describe('API Route Integrations', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: '' }), // fails .min(1)
     });
-    const res = await authRouter.fetch(req);
+    const res = await authRouter.fetch(req, { ENVIRONMENT: 'local' });
     expect(res.status).toBe(400);
   });
 });

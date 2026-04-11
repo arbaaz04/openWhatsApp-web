@@ -13,7 +13,7 @@ type Variables = { requestId: string; userId: string; userEmail: string; teamId:
 const userRouter = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>();
 
 // ---------------------------------------------------------------------------
-// POST /api/users/me — upsert the authenticated user's profile
+// GET /api/users/me — upsert and return the authenticated user's profile
 // Called once after OAuth sign-in completes on the frontend.
 // ---------------------------------------------------------------------------
 const meRoute = createRoute({

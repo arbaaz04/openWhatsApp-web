@@ -42,6 +42,9 @@ const embeddedSignupRoute = createRoute({
   },
 });
 
+// 20 req/min — tighter than the global limit since this hits Meta's API
+authRouter.use('/embedded-signup', rateLimiter(20));
+
 authRouter.openapi(embeddedSignupRoute, async (c) => {
   const log = createLogger({ requestId: c.get('requestId') });
   const { code, wabaId, phoneNumberId, teamId } = c.req.valid('json');
@@ -75,8 +78,5 @@ authRouter.openapi(embeddedSignupRoute, async (c) => {
     200
   );
 });
-
-// 20 req/min — tighter than the global limit since this hits Meta's API
-authRouter.use('/embedded-signup', rateLimiter(20));
 
 export default authRouter;
