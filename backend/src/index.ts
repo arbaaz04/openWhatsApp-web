@@ -3,6 +3,8 @@ import { createLogger, logger, setTelemetrySink } from './utils/logger.js';
 import { ApiError, formatErrorResponse } from './utils/errors.js';
 import { createDb, setDb } from './db/index.js';
 import { validateEnv } from './utils/validateEnv.js';
+import { securityHeaders } from './middleware/securityHeaders.js';
+import { cors } from './middleware/cors.js';
 import { swaggerUI } from '@hono/swagger-ui';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { WorkerBindings } from './types/bindings.js';
@@ -12,26 +14,32 @@ import webhookRouter from './routes/webhook.routes.js';
 import wsRouter from './routes/ws.routes.js';
 
 // ---------------------------------------------------------------------------
-// Hono type extensions
+// Hono type extensions — Variables available on every request context
 // ---------------------------------------------------------------------------
 type Variables = {
+  /** Unique ID per request for log correlation across the entire middleware chain */
   requestId: string;
 };
 
 const app = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>();
 
 // ---------------------------------------------------------------------------
-// Middleware — runs in order on every request
+// Middleware — executes in order for every request
 // ---------------------------------------------------------------------------
 
-// 1. Assign a unique ID to this request for log correlation
+// 1. Assign a unique correlation ID before anything else runs
 app.use('*', async (c, next) => {
-  const requestId = crypto.randomUUID();
-  c.set('requestId', requestId);
+  c.set('requestId', crypto.randomUUID());
   await next();
 });
 
-// 2. Configure telemetry sink if bindings are present (fire-and-forget for ERROR/WARN)
+// 2. Security headers — applied before route handlers so they're always present
+app.use('*', securityHeaders);
+
+// 3. CORS — reject disallowed origins early, before any business logic
+app.use('*', cors);
+
+// 4. Configure optional telemetry sink (fire-and-forget for ERROR/WARN)
 app.use('*', async (c, next) => {
   if (c.env?.TELEMETRY_URL && c.env?.TELEMETRY_TOKEN) {
     setTelemetrySink(c.env.TELEMETRY_URL, c.env.TELEMETRY_TOKEN);
@@ -39,16 +47,25 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// 3. Validate all required bindings are present — fail fast with 503
+// 5. Validate all required env bindings — fail fast with 503 rather than
+//    a confusing 500 deep inside a service call
 app.use('*', async (c, next) => {
   if (c.env?.DATABASE_URL) {
-    // Only validate when env is present (skips test env where app.fetch has no env)
     validateEnv(c.env);
   }
   await next();
 });
 
-// 3. DB initialisation — safe to call on every request (Proxy is idempotent)
+// 6. Request body size guard — rejects payloads over 512KB to prevent memory exhaustion
+app.use('*', async (c, next) => {
+  const contentLength = parseInt(c.req.header('Content-Length') ?? '0', 10);
+  if (contentLength > 512 * 1024) {
+    throw new ApiError(413, 'Request body too large (max 512KB)', 'PAYLOAD_TOO_LARGE');
+  }
+  await next();
+});
+
+// 7. DB initialisation — safe to call on every request (idempotent)
 app.use('*', async (c, next) => {
   if (c.env?.DATABASE_URL) {
     setDb(createDb(c.env.DATABASE_URL));
@@ -56,20 +73,27 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// 4. Structured request logging with correlation ID
+// 8. Structured request logging with requestId — runs after DB init so
+//    we can log a complete picture including durationMs on response
 app.use('*', async (c, next) => {
   const log = createLogger({ requestId: c.get('requestId') });
-  log.info('Incoming Request', { method: c.req.method, path: c.req.path });
+  const start = Date.now();
+  log.info('Request started', { method: c.req.method, path: c.req.path });
   await next();
+  log.info('Request completed', {
+    method: c.req.method,
+    path: c.req.path,
+    statusCode: c.res.status,
+    durationMs: Date.now() - start,
+  });
 });
 
 // ---------------------------------------------------------------------------
 // Error handlers
 // ---------------------------------------------------------------------------
 app.onError((err, c) => {
-  const requestId = c.get('requestId');
-  logger.error('Unhandled Exception', {
-    requestId,
+  logger.error('Unhandled exception', {
+    requestId: c.get('requestId'),
     error: err.message,
     stack: err.stack,
   });

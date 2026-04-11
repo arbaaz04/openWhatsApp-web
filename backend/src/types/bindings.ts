@@ -13,12 +13,15 @@ export interface WorkerBindings {
   WEBHOOK_VERIFY_TOKEN: string;
   META_APP_ID: string;
   META_APP_SECRET: string;
+  /** AES-256-GCM key — 64-char hex string (32 bytes). Used to encrypt access tokens at rest. */
+  DATA_ENCRYPTION_KEY: string;
+  /** Frontend origin allowed by the CORS middleware. Example: https://app.whatflow.io */
+  ALLOWED_ORIGIN: string;
   INBOX_SYNC: DurableObjectNamespace;
   RATE_LIMITER?: {
     limit(options: { key: string }): Promise<{ success: boolean }>;
   };
   // Optional telemetry sink — set these to forward ERROR/WARN logs externally
-  // (e.g. Axiom, Baselime, or any HTTP ingest endpoint)
   TELEMETRY_URL?: string;
   TELEMETRY_TOKEN?: string;
 }

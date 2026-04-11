@@ -1,5 +1,6 @@
 import { logger } from '../utils/logger.js';
 import { ApiError } from '../utils/errors.js';
+import { encrypt, decrypt } from '../utils/encryption.js';
 import { db } from '../db/index.js';
 import { channels } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
@@ -16,11 +17,11 @@ interface MetaTokenResponse {
  * Calls the Meta Graph API to exchange a short-lived embedded signup code
  * for a long-lived System User Access Token.
  *
- * @param clientId - Your Meta App ID
+ * @param clientId     - Your Meta App ID
  * @param clientSecret - Your Meta App Secret
- * @param code - The temporary code from the embedded signup flow
+ * @param code         - The temporary code from the embedded signup flow
  * @returns The long-lived access token string
- * @throws {ApiError} if Meta returns a non-200 or a malformed response
+ * @throws {ApiError} 502 if Meta returns a non-200 or a malformed response
  */
 async function fetchMetaAccessToken(
   clientId: string,
@@ -66,25 +67,33 @@ async function fetchMetaAccessToken(
  */
 export const authService = {
   /**
-   * Exchanges an embedded signup code for a long-lived access token and
-   * upserts the corresponding channel record in the database.
+   * Exchanges an embedded signup code for a long-lived access token,
+   * encrypts it with AES-256-GCM, then upserts the channel in the database.
    *
-   * @param code - Short-lived code from Meta's embedded signup JS callback
-   * @param wabaId - WhatsApp Business Account ID
-   * @param phoneNumberId - Phone Number ID associated with the channel
-   * @param clientId - Meta App ID (from environment bindings)
-   * @param clientSecret - Meta App Secret (from environment bindings)
+   * Access tokens are encrypted at rest using the `DATA_ENCRYPTION_KEY` binding.
+   * They are never stored in plaintext and never returned to the frontend.
+   *
+   * @param code              - Short-lived code from Meta's embedded signup JS callback
+   * @param wabaId            - WhatsApp Business Account ID
+   * @param phoneNumberId     - Phone Number ID associated with the channel
+   * @param clientId          - Meta App ID (from environment bindings)
+   * @param clientSecret      - Meta App Secret (from environment bindings)
+   * @param encryptionKey     - DATA_ENCRYPTION_KEY binding (64-char hex)
    */
   async exchangeToken(
     code: string,
     wabaId: string,
     phoneNumberId: string,
     clientId: string,
-    clientSecret: string
+    clientSecret: string,
+    encryptionKey: string
   ): Promise<{ success: true }> {
     logger.info('Initiating Meta token exchange', { wabaId, phoneNumberId });
 
-    const accessToken = await fetchMetaAccessToken(clientId, clientSecret, code);
+    const plainAccessToken = await fetchMetaAccessToken(clientId, clientSecret, code);
+
+    // Encrypt before writing to the database — never store plaintext tokens
+    const encryptedToken = await encrypt(plainAccessToken, encryptionKey);
 
     try {
       const existing = await db
@@ -96,7 +105,7 @@ export const authService = {
       if (existing.length > 0) {
         await db
           .update(channels)
-          .set({ wabaId, accessToken })
+          .set({ wabaId, accessToken: encryptedToken })
           .where(eq(channels.whatsappId, phoneNumberId));
 
         logger.info('Channel credentials rotated', { wabaId, phoneNumberId });
@@ -105,7 +114,7 @@ export const authService = {
           type: 'business_app',
           wabaId,
           whatsappId: phoneNumberId,
-          accessToken,
+          accessToken: encryptedToken,
         });
 
         logger.info('Channel onboarded', { wabaId, phoneNumberId });
@@ -117,5 +126,17 @@ export const authService = {
       logger.error('Failed to persist channel credentials', { error: message });
       throw new ApiError(500, 'Failed to save channel connection', 'DB_ERROR');
     }
+  },
+
+  /**
+   * Retrieves and decrypts the access token for a given channel.
+   * Used by services that need to make outbound Meta API calls.
+   *
+   * @param encryptedToken - The encrypted token string from the database
+   * @param encryptionKey  - DATA_ENCRYPTION_KEY binding (64-char hex)
+   * @returns The decrypted plaintext access token
+   */
+  async getDecryptedToken(encryptedToken: string, encryptionKey: string): Promise<string> {
+    return decrypt(encryptedToken, encryptionKey);
   },
 };

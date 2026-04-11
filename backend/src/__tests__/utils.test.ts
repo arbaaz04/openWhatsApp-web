@@ -166,6 +166,8 @@ describe('Utils Suite', () => {
       WEBHOOK_VERIFY_TOKEN: 'secret',
       META_APP_ID: 'app123',
       META_APP_SECRET: 'appsecret',
+      DATA_ENCRYPTION_KEY: 'a'.repeat(64),
+      ALLOWED_ORIGIN: 'https://app.whatflow.io',
       INBOX_SYNC: {} as DurableObjectNamespace,
     };
 

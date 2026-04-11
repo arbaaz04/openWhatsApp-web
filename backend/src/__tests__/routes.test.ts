@@ -64,18 +64,54 @@ describe('API Route Integrations', () => {
       ],
     };
 
+    const secret = 'test_app_secret';
+    const rawBody = JSON.stringify(payload);
+
+    // Generate a real HMAC-SHA256 signature the same way Meta does
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      enc.encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const buf = await crypto.subtle.sign('HMAC', key, enc.encode(rawBody));
+    const hex = Array.from(new Uint8Array(buf))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+    const signature = `sha256=${hex}`;
+
     const req = new Request('http://localhost/', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Hub-Signature-256': signature,
+      },
+      body: rawBody,
     });
 
+    const env = { META_APP_SECRET: secret };
     const ctx = { waitUntil: vi.fn(), passThroughOnException: vi.fn() } as unknown as ExecutionContext;
-    const res = await webhookRouter.fetch(req, {}, ctx);
+    const res = await webhookRouter.fetch(req, env, ctx);
 
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json).toEqual({ success: true });
+  });
+
+  it('should reject webhook POST with an invalid or missing HMAC signature', async () => {
+    const req = new Request('http://localhost/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ object: 'test', entry: [] }),
+    });
+
+    const env = { META_APP_SECRET: 'test_secret' };
+    const ctx = { waitUntil: vi.fn(), passThroughOnException: vi.fn() } as unknown as ExecutionContext;
+    const res = await webhookRouter.fetch(req, env, ctx);
+
+    expect(res.status).toBe(401);
   });
 
   it('should reject malformed embedded signup bodies at Zod validation layer', async () => {

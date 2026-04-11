@@ -5,7 +5,9 @@
   "vars": {
     "META_APP_ID": "",
     "META_APP_SECRET": "",
-    "WEBHOOK_VERIFY_TOKEN": ""
+    "WEBHOOK_VERIFY_TOKEN": "",
+    "DATA_ENCRYPTION_KEY": "",
+    "ALLOWED_ORIGIN": ""
   },
   "durable_objects": {
     "bindings": [

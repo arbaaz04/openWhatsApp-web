@@ -57,7 +57,14 @@ authRouter.openapi(embeddedSignupRoute, async (c) => {
     );
   }
 
-  await authService.exchangeToken(code, wabaId, phoneNumberId, clientId, clientSecret);
+  await authService.exchangeToken(
+    code,
+    wabaId,
+    phoneNumberId,
+    clientId,
+    clientSecret,
+    c.env.DATA_ENCRYPTION_KEY
+  );
 
   log.info('Channel connected successfully', { wabaId, phoneNumberId });
 

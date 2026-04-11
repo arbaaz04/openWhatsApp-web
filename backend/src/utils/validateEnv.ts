@@ -11,6 +11,8 @@ const REQUIRED_BINDINGS: ReadonlyArray<keyof WorkerBindings> = [
   'WEBHOOK_VERIFY_TOKEN',
   'META_APP_ID',
   'META_APP_SECRET',
+  'DATA_ENCRYPTION_KEY',
+  'ALLOWED_ORIGIN',
 ];
 
 /**
