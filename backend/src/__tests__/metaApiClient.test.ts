@@ -54,7 +54,7 @@ describe('sendTextMessage', () => {
     await sendTextMessage(BASE_OPTIONS);
 
     const [url, init] = (vi.mocked(globalThis.fetch).mock.calls[0] as [string, RequestInit]);
-    expect(url).toContain('/v21.0/phone123/messages');
+    expect(url).toContain('/v25.0/phone123/messages');
     expect(init.method).toBe('POST');
     expect(init.headers).toMatchObject({
       Authorization: 'Bearer token_abc',
