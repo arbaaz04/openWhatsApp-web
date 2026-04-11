@@ -12,7 +12,7 @@
     "build": "npm run build --workspaces",
     "lint": "npm run lint --workspaces",
     "test": "npm run test --workspaces",
-    "prepare": "husky"
+    "prepare": "node -e \"if (process.env.CI !== 'true') require('child_process').execSync('husky', {stdio:'inherit'})\" || true"
   },
   "devDependencies": {
     "husky": "^9.1.7",
