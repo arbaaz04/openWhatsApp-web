@@ -19,7 +19,7 @@ import { createLogger } from './logger.js';
 // ---------------------------------------------------------------------------
 
 /** Bump this to adopt a newer Graph API version. */
-const META_API_VERSION = 'v21.0';
+const META_API_VERSION = 'v25.0';
 const META_GRAPH_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
 
 /**
