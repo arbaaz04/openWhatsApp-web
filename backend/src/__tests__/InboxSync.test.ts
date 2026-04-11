@@ -89,11 +89,21 @@ describe('InboxSync Durable Object', () => {
 
   it('does not throw on webSocketMessage (reserved hook)', () => {
     const doObj = new InboxSync(makeState());
-    expect(() => doObj.webSocketMessage({} as WebSocket, 'ping')).not.toThrow();
+    const ws = { deserializeAttachment: vi.fn().mockReturnValue(null), send: vi.fn() } as unknown as WebSocket;
+    expect(() => doObj.webSocketMessage(ws, 'ping')).not.toThrow();
+    // ping should trigger a pong response
+    expect((ws as { send: ReturnType<typeof vi.fn> }).send).toHaveBeenCalledWith('pong');
   });
 
   it('does not throw on webSocketClose (runtime handles cleanup)', () => {
     const doObj = new InboxSync(makeState());
-    expect(() => doObj.webSocketClose({} as WebSocket)).not.toThrow();
+    const ws = { deserializeAttachment: vi.fn().mockReturnValue(null) } as unknown as WebSocket;
+    expect(() => doObj.webSocketClose(ws)).not.toThrow();
+  });
+
+  it('does not throw on webSocketError (runtime error handler)', () => {
+    const doObj = new InboxSync(makeState());
+    const ws = { deserializeAttachment: vi.fn().mockReturnValue(null) } as unknown as WebSocket;
+    expect(() => doObj.webSocketError(ws, new Error('Network reset'))).not.toThrow();
   });
 });
