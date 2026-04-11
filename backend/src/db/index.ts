@@ -1,16 +1,14 @@
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
-import * as schema from './schema.js';
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 /**
  * The concrete Drizzle ORM instance type backed by postgres-js.
  * Used throughout repositories and services for type-safe query building.
  */
-export type DrizzleDb = ReturnType<typeof createDb>;
+export type DrizzleDb = PostgresJsDatabase<typeof schema>;
+
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+import * as schema from './schema.js';
 
 // ---------------------------------------------------------------------------
 // Factory — pure function, no side effects at module load time.

@@ -125,7 +125,7 @@ describe('Utils Suite', () => {
 
   describe('setTelemetrySink', () => {
     it('forwards ERROR logs to the configured sink URL', async () => {
-      const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(new Response('ok'));
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
       const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       const { setTelemetrySink } = await import('../utils/logger.js');
@@ -147,7 +147,7 @@ describe('Utils Suite', () => {
     });
 
     it('does not forward INFO logs to the sink', async () => {
-      const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(new Response('ok'));
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'));
       const { setTelemetrySink } = await import('../utils/logger.js');
       setTelemetrySink('https://ingest.example.com/logs', 'tok_abc');
 
