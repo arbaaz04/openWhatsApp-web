@@ -24,7 +24,10 @@ webhookRouter.get('/', (c) => {
     return c.text(challenge ?? '');
   }
 
-  log.error('Webhook verification failed', { providedToken: token });
+  log.error('Webhook verification failed', {
+    hasToken: !!token,
+    mode,
+  });
   return c.text('Forbidden', 403 as ContentfulStatusCode);
 });
 

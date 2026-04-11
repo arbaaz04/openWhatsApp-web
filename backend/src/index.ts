@@ -51,18 +51,40 @@ app.use('*', cors);
 // 4. Validate all required env bindings — fail fast with 503 rather than
 //    a confusing 500 deep inside a service call
 app.use('*', async (c, next) => {
-  if (c.env?.HYPERDRIVE) {
-    validateEnv(c.env);
-  }
+  validateEnv(c.env);
   await next();
 });
 
 // 5. Request body size guard — rejects payloads over 512KB to prevent memory exhaustion
 app.use('*', async (c, next) => {
-  const contentLength = parseInt(c.req.header('Content-Length') ?? '0', 10);
-  if (contentLength > 512 * 1024) {
+  const MAX_BODY_BYTES = 512 * 1024;
+  const hasBody = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.req.method);
+
+  if (!hasBody) {
+    await next();
+    return;
+  }
+
+  const contentLengthHeader = c.req.header('Content-Length');
+  if (contentLengthHeader) {
+    const contentLength = Number(contentLengthHeader);
+    if (!Number.isFinite(contentLength) || contentLength < 0) {
+      throw new ApiError(400, 'Invalid Content-Length header', 'INVALID_CONTENT_LENGTH');
+    }
+    if (contentLength > MAX_BODY_BYTES) {
+      throw new ApiError(413, 'Request body too large (max 512KB)', 'PAYLOAD_TOO_LARGE');
+    }
+    await next();
+    return;
+  }
+
+  // Fallback when Content-Length is absent (e.g. chunked requests).
+  // Clone preserves the original body stream for downstream route handlers.
+  const bodyBytes = await c.req.raw.clone().arrayBuffer();
+  if (bodyBytes.byteLength > MAX_BODY_BYTES) {
     throw new ApiError(413, 'Request body too large (max 512KB)', 'PAYLOAD_TOO_LARGE');
   }
+
   await next();
 });
 
@@ -158,8 +180,21 @@ export default {
         await webhookService.processPayload(message.body, env);
         message.ack();
       } catch (err) {
-        logger.error('Queue message processing failed - will retry via DLQ', { 
-          error: err instanceof Error ? err.message : String(err)
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        const isClientError = err instanceof ApiError && err.statusCode >= 400 && err.statusCode < 500;
+
+        if (isClientError) {
+          logger.error('Queue message dropped due to non-retryable client error', {
+            error: errorMessage,
+            statusCode: err.statusCode,
+            code: err.code,
+          });
+          message.ack();
+          continue;
+        }
+
+        logger.error('Queue message processing failed - will retry via DLQ', {
+          error: errorMessage,
         });
         message.retry();
       }

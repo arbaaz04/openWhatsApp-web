@@ -19,6 +19,8 @@ wsRouter.use('/inbox', requireAuth);
  * Query parameters:
  * - `phoneNumberId` (required) — routes the request to the correct InboxSync DO.
  *   Must match the phoneNumberId from Meta webhook metadata.
+ * - `conversationId` (optional) — narrows replay to a single conversation thread.
+ *   If omitted, replay covers all conversations on the channel.
  * - `lastSeenMessageId` (optional) — the ID of the last message the client
  *   received. If provided, the DO replays all messages after this ID from Postgres
  *   before entering live-broadcast mode (reconnect sync / "Option C").
@@ -56,6 +58,15 @@ wsRouter.get('/inbox', async (c) => {
     );
   }
 
+  const conversationId = c.req.query('conversationId') ?? '';
+  if (conversationId && isNaN(parseInt(conversationId, 10))) {
+    throw new ApiError(
+      400,
+      'conversationId must be a valid integer',
+      'INVALID_CONVERSATION_ID'
+    );
+  }
+
   // Authorize inbox access: caller must be a member of the team
   // that owns the channel represented by phoneNumberId.
   const [channelAccess] = await db
@@ -83,6 +94,9 @@ wsRouter.get('/inbox', async (c) => {
   // The DO reads them from the URL — clean, no custom header needed.
   const url = new URL(c.req.url);
   url.searchParams.set('requestId', c.get('requestId') ?? 'unknown');
+  if (conversationId) {
+    url.searchParams.set('conversationId', conversationId);
+  }
 
   return stub.fetch(new Request(url.toString(), c.req.raw));
 });

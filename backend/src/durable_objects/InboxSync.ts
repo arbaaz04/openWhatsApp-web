@@ -30,13 +30,13 @@
 
 import { createLogger } from '../utils/logger.js';
 import { db } from '../db/index.js';
-import { channels, conversations } from '../db/schema.js';
-import { messageRepository } from '../repositories/messageRepository.js';
-import { eq, desc } from 'drizzle-orm';
+import { channels, conversations, messages } from '../db/schema.js';
+import { and, asc, eq, gt } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
 
 /** How many messages to keep in the hot in-memory buffer. */
 const MESSAGE_BUFFER_SIZE = 50;
+const REPLAY_PAGE_SIZE = 500;
 
 /**
  * Attachment stored on each WebSocket via `ws.serializeAttachment()`.
@@ -45,6 +45,8 @@ const MESSAGE_BUFFER_SIZE = 50;
 interface WsAttachment {
   /** phoneNumberId this socket is subscribed to, for log context. */
   phoneNumberId: string;
+  /** Optional conversation scope for replay and live filtering. */
+  conversationId: number | null;
   /** The most recent message ID the client had at connection time. */
   lastSeenMessageId: number | null;
   /** Cloudflare-assigned request ID for correlation across log entries. */
@@ -96,6 +98,8 @@ export class InboxSync {
     const requestId = url.searchParams.get('requestId') ?? 'do';
     const lastSeenRaw = url.searchParams.get('lastSeenMessageId');
     const lastSeenMessageId = lastSeenRaw ? parseInt(lastSeenRaw, 10) : null;
+    const conversationRaw = url.searchParams.get('conversationId');
+    const conversationId = conversationRaw ? parseInt(conversationRaw, 10) : null;
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
@@ -105,6 +109,7 @@ export class InboxSync {
     // Persist attachment on the socket so hibernated handlers can access it
     server.serializeAttachment({
       phoneNumberId,
+      conversationId: Number.isNaN(conversationId) ? null : conversationId,
       requestId,
       lastSeenMessageId,
     } satisfies WsAttachment);
@@ -205,15 +210,9 @@ export class InboxSync {
     requestId: string
   ): Promise<void> {
     const log = createLogger({ requestId });
+    const attachment = ws.deserializeAttachment() as WsAttachment | null;
+    const conversationId = attachment?.conversationId ?? null;
 
-    // We need the conversationId to query messages. The conversationId isn't
-    // stored on the socket — we derive it from the attachment if set, or skip.
-    // For now we use the phoneNumberId to look up the channel, then the most
-    // recent conversation. Future: pass conversationId as a query param.
-    //
-    // This is intentionally simple for the initial implementation — it replays
-    // the most recently active conversation. Multi-conversation replay is a
-    // follow-up feature.
     const [channel] = await db
       .select({ id: channels.id })
       .from(channels)
@@ -225,23 +224,39 @@ export class InboxSync {
       return;
     }
 
-    // Find the most recently active conversation for this channel
-    const [conversation] = await db
-      .select({ id: conversations.id })
-      .from(conversations)
-      .where(eq(conversations.channelId, channel.id))
-      .orderBy(desc(conversations.lastCustomerMessageAt), desc(conversations.id))
-      .limit(1);
+    const whereConditions = [
+      eq(conversations.channelId, channel.id),
+      gt(messages.id, lastSeenMessageId),
+    ];
 
-    if (!conversation) return;
+    if (conversationId !== null) {
+      whereConditions.push(eq(conversations.id, conversationId));
+    }
 
-    const { items: missed, hasMore, nextCursor } = await messageRepository.getMessagesSince(
-      conversation.id,
-      lastSeenMessageId
-    );
+    const rows = await db
+      .select({
+        id: messages.id,
+        conversationId: messages.conversationId,
+        body: messages.body,
+        direction: messages.direction,
+        status: messages.status,
+        sentBy: messages.sentBy,
+        externalId: messages.externalId,
+        createdAt: messages.createdAt,
+      })
+      .from(messages)
+      .innerJoin(conversations, eq(conversations.id, messages.conversationId))
+      .where(and(...whereConditions))
+      .orderBy(asc(messages.id))
+      .limit(REPLAY_PAGE_SIZE + 1);
+
+    const hasMore = rows.length > REPLAY_PAGE_SIZE;
+    const missed = hasMore ? rows.slice(0, REPLAY_PAGE_SIZE) : rows;
+    const nextCursor = missed.length > 0 ? missed[missed.length - 1].id : null;
 
     log.info('Replaying missed messages to reconnected client', {
       phoneNumberId,
+      conversationId,
       lastSeenMessageId,
       count: missed.length,
       hasMore,
