@@ -14,10 +14,17 @@
     "db:push": "drizzle-kit push"
   },
   "vitest": {
-    "include": ["src/__tests__/**/*.test.ts"],
+    "include": [
+      "src/__tests__/**/*.test.ts"
+    ],
     "coverage": {
-      "include": ["src/**/*.ts"],
-      "exclude": ["src/__tests__/**", "src/types/**"],
+      "include": [
+        "src/**/*.ts"
+      ],
+      "exclude": [
+        "src/__tests__/**",
+        "src/types/**"
+      ],
       "thresholds": {
         "lines": 80,
         "functions": 80,
@@ -30,7 +37,8 @@
     "@hono/swagger-ui": "^0.6.1",
     "@hono/zod-openapi": "latest",
     "@neondatabase/serverless": "^1.0.2",
-    "drizzle-orm": "^0.30.0",
+    "drizzle-kit": "^0.31.1",
+    "drizzle-orm": "^0.45.2",
     "hono": "^4.0.0",
     "postgres": "^3.4.4",
     "zod": "latest"

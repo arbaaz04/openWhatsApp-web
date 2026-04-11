@@ -13,6 +13,7 @@ const REQUIRED_BINDINGS: ReadonlyArray<keyof WorkerBindings> = [
   'META_APP_SECRET',
   'DATA_ENCRYPTION_KEY',
   'ALLOWED_ORIGIN',
+  'SUPABASE_JWT_SECRET',
 ];
 
 /**

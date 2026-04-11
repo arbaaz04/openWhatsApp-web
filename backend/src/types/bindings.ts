@@ -17,6 +17,8 @@ export interface WorkerBindings {
   DATA_ENCRYPTION_KEY: string;
   /** Frontend origin allowed by the CORS middleware. Example: https://app.whatflow.io */
   ALLOWED_ORIGIN: string;
+  /** Supabase JWT signing secret — found in Supabase dashboard → Settings → API */
+  SUPABASE_JWT_SECRET: string;
   INBOX_SYNC: DurableObjectNamespace;
   RATE_LIMITER?: {
     limit(options: { key: string }): Promise<{ success: boolean }>;

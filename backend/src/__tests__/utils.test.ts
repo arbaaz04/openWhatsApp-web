@@ -168,6 +168,7 @@ describe('Utils Suite', () => {
       META_APP_SECRET: 'appsecret',
       DATA_ENCRYPTION_KEY: 'a'.repeat(64),
       ALLOWED_ORIGIN: 'https://app.whatflow.io',
+      SUPABASE_JWT_SECRET: 'supabase-jwt-secret',
       INBOX_SYNC: {} as DurableObjectNamespace,
     };
 

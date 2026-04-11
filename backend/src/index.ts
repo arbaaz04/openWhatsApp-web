@@ -12,6 +12,7 @@ import type { WorkerBindings } from './types/bindings.js';
 import authRouter from './routes/auth.routes.js';
 import webhookRouter from './routes/webhook.routes.js';
 import wsRouter from './routes/ws.routes.js';
+import userRouter from './routes/user.routes.js';
 
 // ---------------------------------------------------------------------------
 // Hono type extensions — Variables available on every request context
@@ -19,6 +20,12 @@ import wsRouter from './routes/ws.routes.js';
 type Variables = {
   /** Unique ID per request for log correlation across the entire middleware chain */
   requestId: string;
+  /** Supabase user UUID — set by requireAuth */
+  userId: string;
+  /** Authenticated user email — set by requireAuth */
+  userEmail: string;
+  /** Resolved team ID — set by requireRole */
+  teamId: string;
 };
 
 const app = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>();
@@ -114,6 +121,7 @@ app.notFound((c) =>
 app.route('/api/auth', authRouter);
 app.route('/api/webhooks', webhookRouter);
 app.route('/api/ws', wsRouter);
+app.route('/api/users', userRouter);
 
 app.doc('/doc', {
   openapi: '3.1.0',

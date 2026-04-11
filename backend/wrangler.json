@@ -7,7 +7,8 @@
     "META_APP_SECRET": "",
     "WEBHOOK_VERIFY_TOKEN": "",
     "DATA_ENCRYPTION_KEY": "",
-    "ALLOWED_ORIGIN": ""
+    "ALLOWED_ORIGIN": "",
+    "SUPABASE_JWT_SECRET": ""
   },
   "durable_objects": {
     "bindings": [
