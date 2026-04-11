@@ -10,13 +10,19 @@ const wsRouter = new Hono<{ Bindings: WorkerBindings; Variables: Variables }>();
 /**
  * WebSocket handshake for a specific channel inbox.
  *
- * Requires `?phoneNumberId=<id>` — this is the key used to look up the
- * InboxSync Durable Object instance. It must match the phoneNumberId from
- * the Meta webhook metadata, which is the same key webhookService uses when
- * broadcasting incoming messages. Without this, clients would connect to a
- * different DO instance and never receive anything.
+ * Query parameters:
+ * - `phoneNumberId` (required) — routes the request to the correct InboxSync DO.
+ *   Must match the phoneNumberId from Meta webhook metadata.
+ * - `lastSeenMessageId` (optional) — the ID of the last message the client
+ *   received. If provided, the DO replays all messages after this ID from Postgres
+ *   before entering live-broadcast mode (reconnect sync / "Option C").
+ *   Omit on the very first connection — the DO will replay the in-memory buffer.
  *
- * @example ws://api/ws/inbox?phoneNumberId=1234567890
+ * @example First-ever connection
+ *   ws://api/ws/inbox?phoneNumberId=1234567890
+ *
+ * @example Reconnect after going offline
+ *   ws://api/ws/inbox?phoneNumberId=1234567890&lastSeenMessageId=4201
  */
 wsRouter.get('/inbox', async (c) => {
   const log = createLogger({ requestId: c.get('requestId') });
@@ -34,15 +40,30 @@ wsRouter.get('/inbox', async (c) => {
     );
   }
 
+  const lastSeenMessageId = c.req.query('lastSeenMessageId') ?? '';
+  if (lastSeenMessageId && isNaN(parseInt(lastSeenMessageId, 10))) {
+    throw new ApiError(
+      400,
+      'lastSeenMessageId must be a valid integer',
+      'INVALID_CURSOR'
+    );
+  }
+
   // Key must match what webhookService uses: INBOX_SYNC.idFromName(phoneNumberId)
-  // Using any other key (e.g. 'default-inbox') would silently connect the client
-  // to a DO instance that receives no broadcasts.
   const id = c.env.INBOX_SYNC.idFromName(phoneNumberId);
   const stub = c.env.INBOX_SYNC.get(id);
 
-  log.info('Upgrading WebSocket connection', { phoneNumberId });
+  log.info('Upgrading WebSocket connection', {
+    phoneNumberId,
+    hasLastSeenMessageId: !!lastSeenMessageId,
+  });
 
-  return stub.fetch(c.req.raw);
+  // Forward requestId and lastSeenMessageId to the DO via query params.
+  // The DO reads them from the URL — clean, no custom header needed.
+  const url = new URL(c.req.url);
+  url.searchParams.set('requestId', c.get('requestId') ?? 'unknown');
+
+  return stub.fetch(new Request(url.toString(), c.req.raw));
 });
 
 export default wsRouter;
