@@ -33,6 +33,13 @@ export const messageStatusEnum = pgEnum('message_status', [
   'failed',
 ]);
 
+/** Channel lifecycle status. */
+export const channelStatusEnum = pgEnum('channel_status', [
+  'active',
+  'paused',
+  'disabled',
+]);
+
 /** Team member access level. */
 export const teamRoleEnum = pgEnum('team_role', [
   'admin',
@@ -126,7 +133,7 @@ export const channels = pgTable(
     wabaId: text('waba_id'),
     /** AES-256-GCM encrypted WhatsApp access token. Never stored in plaintext. */
     accessToken: text('access_token').notNull(),
-    status: varchar('status', { length: 20 }).default('active'),
+    status: channelStatusEnum('status').default('active').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (t) => ({

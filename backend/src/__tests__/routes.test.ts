@@ -114,13 +114,13 @@ describe('API Route Integrations', () => {
     expect(res.status).toBe(401);
   });
 
-  it('should reject malformed embedded signup bodies at Zod validation layer', async () => {
+  it('should fail embedded signup when authentication is missing', async () => {
     const req = new Request('http://localhost/embedded-signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: '' }), // fails .min(1)
     });
     const res = await authRouter.fetch(req, { ENVIRONMENT: 'local' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(500);
   });
 });

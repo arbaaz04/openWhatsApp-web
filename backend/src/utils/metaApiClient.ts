@@ -207,7 +207,11 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } catch (err) {
-    if ((err as { name?: string }).name === 'AbortError') {
+    const isAbortError =
+      (typeof DOMException !== 'undefined' && err instanceof DOMException && err.name === 'AbortError') ||
+      (err instanceof Error && err.name === 'AbortError');
+
+    if (isAbortError) {
       throw new ApiError(504, 'Meta API request timed out', 'META_TIMEOUT');
     }
     throw err;

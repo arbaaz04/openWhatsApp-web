@@ -64,7 +64,8 @@ export const webhookService = {
                     'x-internal-auth': env.META_APP_SECRET,
                   },
                   body: JSON.stringify({
-                      messageId,
+                    type: 'incoming',
+                    messageId,
                     customerPhone,
                     bodyText,
                     timestamp: new Date().toISOString(),

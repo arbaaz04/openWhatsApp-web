@@ -15,6 +15,13 @@
       "when": 1775923200000,
       "tag": "0001_message_sent_by",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776000000000,
+      "tag": "0002_channel_status_enum",
+      "breakpoints": true
     }
   ]
 }

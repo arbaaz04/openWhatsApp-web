@@ -2,10 +2,14 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { ApiError } from '../utils/errors.js';
 import { createLogger } from '../utils/logger.js';
 import { rateLimiter } from '../utils/rateLimiter.js';
+import { requireAuth } from '../middleware/requireAuth.js';
+import { db } from '../db/index.js';
+import { teamMembers } from '../db/schema.js';
+import { and, eq } from 'drizzle-orm';
 import { authService } from '../services/authService.js';
 import type { WorkerBindings } from '../types/bindings.js';
 
-type Variables = { requestId: string };
+type Variables = { requestId: string; userId: string; userEmail: string };
 
 const authRouter = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>();
 
@@ -37,16 +41,20 @@ const embeddedSignupRoute = createRoute({
       },
     },
     400: { description: 'Bad Request — missing or invalid fields' },
+    401: { description: 'Unauthorized — missing or invalid JWT' },
+    403: { description: 'Authenticated user is not a member of the provided team' },
     500: { description: 'META_APP_ID or META_APP_SECRET binding not configured' },
     502: { description: 'Upstream error from Meta Graph API' },
   },
 });
 
+authRouter.use('/embedded-signup', requireAuth);
 // 20 req/min — tighter than the global limit since this hits Meta's API
 authRouter.use('/embedded-signup', rateLimiter(20));
 
 authRouter.openapi(embeddedSignupRoute, async (c) => {
   const log = createLogger({ requestId: c.get('requestId') });
+  const userId = c.get('userId');
   const { code, wabaId, phoneNumberId, teamId } = c.req.valid('json');
 
   log.info('Embedded signup callback received', { wabaId, phoneNumberId, teamId });
@@ -59,6 +67,16 @@ authRouter.openapi(embeddedSignupRoute, async (c) => {
       'META_APP_ID or META_APP_SECRET binding is not configured',
       'MISSING_ENV_BINDINGS'
     );
+  }
+
+  const [membership] = await db
+    .select({ id: teamMembers.id })
+    .from(teamMembers)
+    .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
+    .limit(1);
+
+  if (!membership) {
+    throw new ApiError(403, 'You do not have access to this team', 'FORBIDDEN');
   }
 
   await authService.exchangeToken(

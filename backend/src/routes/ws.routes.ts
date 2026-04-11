@@ -1,11 +1,17 @@
 import { Hono } from 'hono';
 import { createLogger } from '../utils/logger.js';
 import { ApiError } from '../utils/errors.js';
+import { requireAuth } from '../middleware/requireAuth.js';
+import { db } from '../db/index.js';
+import { channels, teamMembers } from '../db/schema.js';
+import { and, eq } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
 
-type Variables = { requestId: string };
+type Variables = { requestId: string; userId: string; userEmail: string };
 
 const wsRouter = new Hono<{ Bindings: WorkerBindings; Variables: Variables }>();
+
+wsRouter.use('/inbox', requireAuth);
 
 /**
  * WebSocket handshake for a specific channel inbox.
@@ -26,6 +32,7 @@ const wsRouter = new Hono<{ Bindings: WorkerBindings; Variables: Variables }>();
  */
 wsRouter.get('/inbox', async (c) => {
   const log = createLogger({ requestId: c.get('requestId') });
+  const userId = c.get('userId');
 
   if (c.req.header('Upgrade') !== 'websocket') {
     return c.text('Expected Upgrade: websocket', 426);
@@ -49,12 +56,26 @@ wsRouter.get('/inbox', async (c) => {
     );
   }
 
+  // Authorize inbox access: caller must be a member of the team
+  // that owns the channel represented by phoneNumberId.
+  const [channelAccess] = await db
+    .select({ channelId: channels.id })
+    .from(channels)
+    .innerJoin(teamMembers, eq(teamMembers.teamId, channels.teamId))
+    .where(and(eq(channels.whatsappId, phoneNumberId), eq(teamMembers.userId, userId)))
+    .limit(1);
+
+  if (!channelAccess) {
+    throw new ApiError(403, 'You do not have access to this inbox', 'FORBIDDEN');
+  }
+
   // Key must match what webhookService uses: INBOX_SYNC.idFromName(phoneNumberId)
   const id = c.env.INBOX_SYNC.idFromName(phoneNumberId);
   const stub = c.env.INBOX_SYNC.get(id);
 
   log.info('Upgrading WebSocket connection', {
     phoneNumberId,
+    userId,
     hasLastSeenMessageId: !!lastSeenMessageId,
   });
 
