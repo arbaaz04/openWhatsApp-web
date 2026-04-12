@@ -107,17 +107,13 @@ jobs:
             fi
           done
 
-          npx wrangler queues list --json > queues.json
-          node -e '
-            const fs = require("fs");
-            const queues = JSON.parse(fs.readFileSync("queues.json", "utf8"));
-            const names = new Set(queues.map((q) => q.queue_name));
-            for (const name of ["whatflow-webhooks-dev", "whatflow-webhooks-dlq-dev"]) {
-              if (!names.has(name)) {
-                throw new Error(`Missing required development queue: ${name}`);
-              }
-            }
-          '
+          npx wrangler queues list > queues.txt
+          for name in whatflow-webhooks-dev whatflow-webhooks-dlq-dev; do
+            if ! grep -q "$name" queues.txt; then
+              echo "Missing required development queue: $name"
+              exit 1
+            fi
+          done
 
       - name: Deploy Backend
         working-directory: ./backend
