@@ -32,9 +32,7 @@ const meRoute = createRoute({
               name: z.string().nullable(),
               avatarUrl: z.string().nullable(),
             }),
-            teams: z.array(
-              z.object({ teamId: z.number(), name: z.string(), role: z.string() })
-            ),
+            teams: z.array(z.object({ teamId: z.number(), name: z.string(), role: z.string() })),
           }),
         },
       },
@@ -47,50 +45,73 @@ userRouter.use('/me', requireAuth);
 userRouter.openapi(meRoute, async (c) => {
   const log = createLogger({ requestId: c.get('requestId') });
   const userId = c.get('userId');
+  const userEmail = c.get('userEmail');
 
-  // Upsert user record — creates on first call, no-ops on subsequent calls
-  await db
-    .insert(users)
-    .values({
-      id: userId,
-      email: c.get('userEmail'),
-    })
-    .onConflictDoNothing(); // Already exists — skip
-
-  const [user] = await db
-    .select()
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-
-  if (!user) throw new ApiError(500, 'Failed to resolve user record', 'DB_ERROR');
-
-  const memberships = await db
-    .select({
-      teamId: teamMembers.teamId,
-      name: teams.name,
-      role: teamMembers.role,
-    })
-    .from(teamMembers)
-    .innerJoin(teams, eq(teams.id, teamMembers.teamId))
-    .where(eq(teamMembers.userId, userId));
-
-  log.info('User profile resolved', { userId, teamCount: memberships.length });
-
-  return c.json({
+  const fallbackProfile = {
     success: true,
     user: {
-      id: user.id,
-      email: user.email,
-      name: user.name ?? null,
-      avatarUrl: user.avatarUrl ?? null,
+      id: userId,
+      email: userEmail,
+      name: null,
+      avatarUrl: null,
     },
-    teams: memberships.map((m) => ({
-      teamId: m.teamId ?? 0,
-      name: m.name,
-      role: m.role,
-    })),
-  }, 200);
+    teams: [] as Array<{ teamId: number; name: string; role: string }>,
+  };
+
+  try {
+    // Upsert user record — creates on first call, no-ops on subsequent calls
+    await db
+      .insert(users)
+      .values({
+        id: userId,
+        email: userEmail,
+      })
+      .onConflictDoNothing(); // Already exists — skip
+
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+    if (!user) {
+      log.warn('User record missing after upsert; returning fallback profile', { userId });
+      return c.json(fallbackProfile, 200);
+    }
+
+    const memberships = await db
+      .select({
+        teamId: teamMembers.teamId,
+        name: teams.name,
+        role: teamMembers.role,
+      })
+      .from(teamMembers)
+      .innerJoin(teams, eq(teams.id, teamMembers.teamId))
+      .where(eq(teamMembers.userId, userId));
+
+    log.info('User profile resolved', { userId, teamCount: memberships.length });
+
+    return c.json(
+      {
+        success: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name ?? null,
+          avatarUrl: user.avatarUrl ?? null,
+        },
+        teams: memberships.map((m) => ({
+          teamId: m.teamId ?? 0,
+          name: m.name,
+          role: m.role,
+        })),
+      },
+      200
+    );
+  } catch (err) {
+    log.error('User profile sync failed; returning fallback profile', {
+      userId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+
+    return c.json(fallbackProfile, 200);
+  }
 });
 
 // ---------------------------------------------------------------------------
