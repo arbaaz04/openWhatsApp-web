@@ -86,7 +86,7 @@ jobs:
             if (!dev || !dev.vars) {
               throw new Error("Missing env.development.vars in backend/wrangler.json");
             }
-            const required = ["ALLOWED_ORIGIN", "SUPABASE_URL", "ENVIRONMENT"];
+            const required = ["ALLOWED_ORIGIN", "SUPABASE_URL", "META_APP_ID", "ENVIRONMENT"];
             for (const key of required) {
               if (!dev.vars[key] || String(dev.vars[key]).trim() === "") {
                 throw new Error(`Missing development var: ${key}`);
@@ -100,7 +100,7 @@ jobs:
           npx wrangler whoami >/dev/null
           npx wrangler secret list --env development > secrets.txt
 
-          for name in SUPABASE_JWT_SECRET DATA_ENCRYPTION_KEY WEBHOOK_VERIFY_TOKEN META_APP_ID META_APP_SECRET; do
+          for name in SUPABASE_JWT_SECRET DATA_ENCRYPTION_KEY WEBHOOK_VERIFY_TOKEN META_APP_SECRET; do
             if ! grep -q "$name" secrets.txt; then
               echo "Missing required Cloudflare secret in development: $name"
               exit 1
