@@ -136,11 +136,14 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
-      # Deploy Frontend via Pages
+      # Frontend deploy is intentionally disabled until the Cloudflare Pages project exists.
+      # Re-enable by replacing "false" with "true" and ensuring project "whatflow-frontend" exists.
       - name: Build Frontend
+        if: ${{ false }}
         working-directory: ./frontend
         run: npm run build
       - name: Deploy Frontend
+        if: ${{ false }}
         working-directory: ./frontend
         run: npx wrangler pages deploy dist --project-name whatflow-frontend
         env:
