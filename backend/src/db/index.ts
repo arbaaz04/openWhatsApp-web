@@ -35,13 +35,14 @@ export function createDb(connectionString: string): DrizzleDb {
     );
   }
 
+  const isHyperdriveConnection = connectionString.includes('hyperdrive.local');
   const client = postgres(connectionString, {
-    ssl: 'require',
+    ssl: isHyperdriveConnection ? false : 'require',
     // One logical connection per Worker invocation — Hyperdrive handles pooling
     // at the edge, so we don't need more than one per isolate.
     max: 1,
     idle_timeout: 20,
-    connect_timeout: 10,
+    connect_timeout: 30,
     // Disable prepare — required for Supabase Transaction mode pooler (pgBouncer/Supavisor)
     // which does not support extended query protocol over the same connection.
     prepare: false,
