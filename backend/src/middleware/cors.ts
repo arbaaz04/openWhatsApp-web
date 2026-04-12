@@ -44,8 +44,9 @@ export async function cors(
   }
 
   const allowed = c.env.ALLOWED_ORIGIN;
+  const allowWildcard = allowed === '*' && c.env.ENVIRONMENT === 'development';
 
-  if (origin !== allowed) {
+  if (!allowWildcard && origin !== allowed) {
     c.res = new Response('Forbidden — origin not allowed', { status: 403 });
     return;
   }
@@ -55,7 +56,7 @@ export async function cors(
     c.res = new Response(null, {
       status: 204,
       headers: {
-        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Origin': allowWildcard ? '*' : origin,
         ...CORS_HEADERS,
       },
     });
@@ -64,6 +65,6 @@ export async function cors(
 
   await next();
 
-  c.res.headers.set('Access-Control-Allow-Origin', origin);
+  c.res.headers.set('Access-Control-Allow-Origin', allowWildcard ? '*' : origin);
   Object.entries(CORS_HEADERS).forEach(([k, v]) => c.res.headers.set(k, v));
 }

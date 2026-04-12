@@ -116,4 +116,33 @@ describe('cors middleware', () => {
     const res = (c as unknown as { _res: Response })._res;
     expect(res.status).toBe(204);
   });
+
+  it('allows wildcard origin only when ALLOWED_ORIGIN=* and ENVIRONMENT=development', async () => {
+    const c = makeContext({
+      req: { method: 'GET', header: (k: string) => k === 'Origin' ? 'https://random.example' : undefined },
+      env: { ALLOWED_ORIGIN: '*', ENVIRONMENT: 'development' },
+    });
+    const next = vi.fn().mockResolvedValue(undefined);
+    await cors(c as never, next);
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it('rejects wildcard origin when environment is not development', async () => {
+    let setCalled = false;
+    const c = {
+      req: { method: 'GET', header: (k: string) => k === 'Origin' ? 'https://random.example' : undefined },
+      env: { ALLOWED_ORIGIN: '*', ENVIRONMENT: 'production' },
+      res: null as unknown,
+      _res: null as unknown,
+    };
+    Object.defineProperty(c, 'res', {
+      set: (v: unknown) => { setCalled = true; c._res = v; },
+      get: () => c._res,
+    });
+
+    await cors(c as never, vi.fn());
+    expect(setCalled).toBe(true);
+    const res = (c as unknown as { _res: Response })._res;
+    expect(res.status).toBe(403);
+  });
 });
