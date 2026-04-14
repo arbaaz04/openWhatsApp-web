@@ -38,8 +38,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 1. Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) {
-        syncProfile(session.access_token);
+      if (session && session.user) {
+        syncProfile(session.access_token, session.user);
       } else {
         setProfile(null);
         setTeams([]);
@@ -50,8 +50,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 2. Set initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) {
-        syncProfile(session.access_token);
+      if (session && session.user) {
+        syncProfile(session.access_token, session.user);
       } else {
         setLoading(false);
       }
@@ -60,10 +60,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => subscription.unsubscribe();
   }, []);
 
-  const syncProfile = async (token: string) => {
+  const syncProfile = async (token: string, user: User) => {
     try {
+      const metadata = user.user_metadata || {};
+      const name = metadata.full_name || metadata.name || '';
+      const avatarUrl = metadata.avatar_url || '';
+
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
-      const res = await fetch(`${apiUrl}/api/users/me`, {
+      const params = new URLSearchParams();
+      if (name) params.append('name', name);
+      if (avatarUrl) params.append('avatarUrl', avatarUrl);
+
+      const res = await fetch(`${apiUrl}/api/users/me?${params.toString()}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -75,9 +83,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setProfile(data.user);
           setTeams(data.teams);
         }
+      } else {
+        // Fallback to metadata if backend fails
+        setProfile({
+          id: user.id,
+          email: user.email || '',
+          name: name || null,
+          avatarUrl: avatarUrl || null,
+        });
       }
     } catch (err) {
       console.error('Failed to sync profile with backend:', err);
+      // Fallback
+      const metadata = user.user_metadata || {};
+      setProfile({
+        id: user.id,
+        email: user.email || '',
+        name: metadata.full_name || metadata.name || null,
+        avatarUrl: metadata.avatar_url || null,
+      });
     } finally {
       setLoading(false);
     }
@@ -87,7 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin
+        redirectTo: `${window.location.origin}/dashboard`
       }
     });
     if (error) throw error;
@@ -98,7 +122,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const refreshProfile = async () => {
-    if (session) await syncProfile(session.access_token);
+    if (session && session.user) await syncProfile(session.access_token, session.user);
   };
 
   return (

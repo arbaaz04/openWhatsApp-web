@@ -15,6 +15,7 @@ import webhookRouter from './routes/webhook.routes.js';
 import wsRouter from './routes/ws.routes.js';
 import userRouter from './routes/user.routes.js';
 import conversationRouter from './routes/conversation.routes.js';
+import dashboardRouter from './routes/dashboard.routes.js';
 
 // ---------------------------------------------------------------------------
 // Hono type extensions — Variables available on every request context
@@ -147,6 +148,7 @@ app.route('/api/webhooks', webhookRouter);
 app.route('/api/ws', wsRouter);
 app.route('/api/users', userRouter);
 app.route('/api/conversations', conversationRouter);
+app.route('/api/dashboard', dashboardRouter);
 
 app.doc('/doc', {
   openapi: '3.1.0',

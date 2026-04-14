@@ -1,11 +1,71 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Plus, Key, Globe, Waypoints, ExternalLink, 
-  Package, Activity
+  Package, Activity, Mail
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { useAuth } from '../../contexts/AuthContext';
+
+interface DashboardStats {
+  numbersCount: number;
+  messagesCount: number;
+  inboundCount: number;
+  outboundCount: number;
+  conversationsCount: number;
+  activeConversationsCount: number;
+}
+
+interface RecentMessage {
+  id: number;
+  phone: string;
+  contact: string;
+  direction: string;
+  status: string | null;
+  content: string | null;
+  createdAt: string;
+}
 
 export function Dashboard() {
+  const { session } = useAuth();
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [recentMessages, setRecentMessages] = useState<RecentMessage[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!session) return;
+      
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
+        
+        const [statsRes, messagesRes] = await Promise.all([
+          fetch(`${apiUrl}/api/dashboard/stats`, {
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+          }),
+          fetch(`${apiUrl}/api/dashboard/recent-messages`, {
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+          })
+        ]);
+
+        if (statsRes.ok) {
+          const data = await statsRes.json();
+          setStats(data.stats);
+        }
+
+        if (messagesRes.ok) {
+          const data = await messagesRes.json();
+          setRecentMessages(data.messages);
+        }
+      } catch (err) {
+        console.error('Failed to fetch dashboard data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [session]);
+
   return (
     <div className="flex-1 bg-white overflow-y-auto no-scrollbar pb-20">
       {/* Header */}
@@ -37,7 +97,7 @@ export function Dashboard() {
         </div>
 
         <div className="text-[13px] text-gray-500 font-medium">
-          Apr 7 - Apr 13, 2026
+          {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
         </div>
       </div>
 
@@ -46,18 +106,22 @@ export function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard 
             title="Numbers" 
-            value="0" 
+            value={loading ? "..." : stats?.numbersCount.toString() || "0"} 
             footer={<button className="text-[#128C7E] font-medium">Add free number →</button>}
           />
           <StatCard 
             title="Messages" 
-            value="8" 
-            footer={<span className="text-gray-400">↓ 4 in · ↑ 4 out</span>}
+            value={loading ? "..." : stats?.messagesCount.toString() || "0"} 
+            footer={
+              <span className="text-gray-400">
+                ↓ {stats?.inboundCount || 0} in · ↑ {stats?.outboundCount || 0} out
+              </span>
+            }
           />
           <StatCard 
             title="Conversations" 
-            value="3" 
-            footer={<span className="text-green-600 font-medium">1 active</span>}
+            value={loading ? "..." : stats?.conversationsCount.toString() || "0"} 
+            footer={<span className="text-green-600 font-medium">{stats?.activeConversationsCount || 0} active</span>}
           />
           <StatCard 
             title="Workflows" 
@@ -70,12 +134,13 @@ export function Dashboard() {
         <div className="space-y-4">
           <h2 className="text-[14px] font-bold text-gray-900 uppercase tracking-widest">Daily messages</h2>
           <div className="h-48 w-full bg-gray-50 rounded-xl border border-[#EDEDED] flex flex-col items-center justify-center relative overflow-hidden group">
-             {/* Simple SVG Chart Background */}
              <svg className="absolute inset-0 w-full h-full opacity-5" preserveAspectRatio="none">
                <path d="M0 100 L100 80 L200 90 L300 40 L400 60 L500 20 L600 70 L700 85 L800 95 L900 100" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="5,5" />
              </svg>
              <Activity className="w-8 h-8 text-gray-300 mb-2 group-hover:text-[#128C7E] transition-colors" />
-             <p className="text-[13px] text-gray-400 font-medium tracking-wide">Ready to track your first message</p>
+             <p className="text-[13px] text-gray-400 font-medium tracking-wide">
+               {stats?.messagesCount ? "Tracking activity across your channels" : "Ready to track your first message"}
+             </p>
           </div>
         </div>
 
@@ -123,7 +188,7 @@ export function Dashboard() {
                 </div>
               </div>
               <div className="h-px bg-[#EDEDED]" />
-              <div className="flex items-center justify-between group cursor-pointer text">
+              <div className="flex items-center justify-between group cursor-pointer">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-white rounded-lg border border-[#EDEDED] shadow-sm">
                     <Package className="w-4 h-4 text-gray-500" />
@@ -143,29 +208,39 @@ export function Dashboard() {
              <button className="text-[12px] font-bold text-[#128C7E]">View inbox</button>
           </div>
           
-          <div className="border border-[#EDEDED] rounded-xl overflow-hidden shadow-sm">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50 border-b border-[#EDEDED]">
-                  <th className="px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Phone</th>
-                  <th className="px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Contact</th>
-                  <th className="px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider text-center">Direction</th>
-                  <th className="px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider text-center">Status</th>
-                  <th className="px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Content</th>
-                  <th className="px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider text-right">Time</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#EDEDED]">
-                <TableRow phone="923201268955" contact="arbaaz" direction="outbound" status="read" content="hi" time="12 Apr at 23:59" />
-                <TableRow phone="923201268955" contact="arbaaz" direction="inbound" status="—" content="HEY" time="12 Apr at 23:59" />
-                <TableRow phone="923201268955" contact="arbaaz" direction="inbound" status="—" content="Hi" time="11 Apr at 16:45" />
-                <TableRow phone="923201268955" contact="arbaaz" direction="inbound" status="—" content="Aa" time="10 Apr at 13:01" />
-                <TableRow phone="923201268955" contact="arbaaz" direction="outbound" status="read" content="aa" time="10 Apr at 13:01" />
-                <TableRow phone="923201268955" contact="arbaaz" direction="outbound" status="read" content="hi" time="10 Apr at 12:43" />
-                <TableRow phone="923201268955" contact="arbaaz" direction="inbound" status="—" content="Reply & verify" time="10 Apr at 12:40" />
-                <TableRow phone="923201268955" contact="arbaaz" direction="outbound" status="read" content="Your WhatsApp API is live! 🎉 Reply to ..." time="10 Apr at 12:39" />
-              </tbody>
-            </table>
+          <div className="border border-[#EDEDED] rounded-xl overflow-hidden shadow-sm min-h-[100px] flex flex-col">
+            {recentMessages.length > 0 ? (
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-[#EDEDED]">
+                    <th className="px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Phone</th>
+                    <th className="px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Contact</th>
+                    <th className="px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider text-center">Direction</th>
+                    <th className="px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider text-center">Status</th>
+                    <th className="px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Content</th>
+                    <th className="px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wider text-right">Time</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#EDEDED]">
+                  {recentMessages.map((msg) => (
+                    <TableRow 
+                      key={msg.id}
+                      phone={msg.phone} 
+                      contact={msg.contact} 
+                      direction={msg.direction === 'incoming' ? 'inbound' : 'outbound'} 
+                      status={msg.status || '—'} 
+                      content={msg.content || '(empty)'} 
+                      time={new Date(msg.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).replace(',', ' at')}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center py-10 text-gray-400 bg-white">
+                <Mail className="w-8 h-8 opacity-20 mb-3" />
+                <p className="text-[13px] font-medium">No recent messages found</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

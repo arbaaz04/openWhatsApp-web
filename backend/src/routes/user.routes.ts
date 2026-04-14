@@ -19,6 +19,12 @@ const userRouter = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variab
 const meRoute = createRoute({
   method: 'get',
   path: '/me',
+  request: {
+    query: z.object({
+      name: z.string().optional(),
+      avatarUrl: z.string().optional(),
+    }),
+  },
   responses: {
     200: {
       description: 'Authenticated user profile with team memberships',
@@ -59,14 +65,24 @@ userRouter.openapi(meRoute, async (c) => {
   };
 
   try {
-    // Upsert user record — creates on first call, no-ops on subsequent calls
+    const { name, avatarUrl } = c.req.valid('query');
+
+    // Upsert user record — creates on first call, updates metadata if provided
     await db
       .insert(users)
       .values({
         id: userId,
         email: userEmail,
+        name: name ?? null,
+        avatarUrl: avatarUrl ?? null,
       })
-      .onConflictDoNothing(); // Already exists — skip
+      .onConflictDoUpdate({
+        target: users.id,
+        set: {
+          name: name ?? undefined,
+          avatarUrl: avatarUrl ?? undefined,
+        },
+      });
 
     const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
 

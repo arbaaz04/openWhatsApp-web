@@ -130,9 +130,17 @@ export function GlobalSidebar() {
             "flex items-center h-10 rounded-md transition-colors px-3",
             !isExpanded && "justify-center px-0"
           )}>
-            <div className="w-6 h-6 rounded-full bg-[#128C7E] border border-[#128C7E]/20 flex items-center justify-center text-[10px] font-bold text-white shrink-0 uppercase shadow-sm">
-              {profile?.name?.[0].toUpperCase() || profile?.email?.[0].toUpperCase() || '?'}
-            </div>
+            {profile?.avatarUrl ? (
+              <img 
+                src={profile.avatarUrl} 
+                alt={profile.name || 'User'} 
+                className="w-6 h-6 rounded-full border border-[#EDEDED] shrink-0 object-cover shadow-sm"
+              />
+            ) : (
+              <div className="w-6 h-6 rounded-full bg-[#128C7E] border border-[#128C7E]/20 flex items-center justify-center text-[10px] font-bold text-white shrink-0 uppercase shadow-sm">
+                {profile?.name?.[0].toUpperCase() || profile?.email?.[0].toUpperCase() || '?'}
+              </div>
+            )}
             {isExpanded && (
               <div className="ml-3 flex flex-col min-w-0 flex-1">
                 <span className="text-[13px] font-semibold text-gray-900 truncate">{profile?.name || 'User'}</span>
