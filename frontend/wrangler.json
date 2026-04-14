@@ -9,10 +9,32 @@
   },
   "env": {
     "production": {
-      "name": "whatflow-web-frontend-production"
+      "name": "whatflow-web-frontend-production",
+      "routes": [
+        { "pattern": "PROD_FRONTEND_HOST", "custom_domain": true }
+      ],
+      "vars": {
+        "ENVIRONMENT": "production",
+        "SUPABASE_URL": "PLACEHOLDER",
+        "META_APP_ID": "PLACEHOLDER",
+        "VITE_META_CONFIG_ID": "PLACEHOLDER",
+        "APP_BACKEND_URL": "PLACEHOLDER",
+        "APP_FRONTEND_URL": "PLACEHOLDER"
+      }
     },
     "development": {
-      "name": "whatflow-web-frontend-development"
+      "name": "whatflow-web-frontend-development",
+      "routes": [
+        { "pattern": "DEV_FRONTEND_HOST", "custom_domain": true }
+      ],
+      "vars": {
+        "ENVIRONMENT": "development",
+        "SUPABASE_URL": "PLACEHOLDER",
+        "META_APP_ID": "PLACEHOLDER",
+        "VITE_META_CONFIG_ID": "PLACEHOLDER",
+        "APP_BACKEND_URL": "PLACEHOLDER",
+        "APP_FRONTEND_URL": "PLACEHOLDER"
+      }
     }
   }
 }

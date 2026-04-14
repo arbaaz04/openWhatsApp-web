@@ -18,6 +18,9 @@
         "META_APP_ID": "your_app_id",
         "ENVIRONMENT": "production"
       },
+      "routes": [
+        { "pattern": "PROD_BACKEND_HOST", "custom_domain": true }
+      ],
       "queues": {
         "producers": [
           {
@@ -70,6 +73,9 @@
         "META_APP_ID": "your_app_id",
         "ENVIRONMENT": "development"
       },
+      "routes": [
+        { "pattern": "DEV_BACKEND_HOST", "custom_domain": true }
+      ],
       "queues": {
         "producers": [
           {

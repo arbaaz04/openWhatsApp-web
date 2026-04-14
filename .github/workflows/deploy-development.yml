@@ -168,12 +168,17 @@ jobs:
           printf '%s' "$WEBHOOK_VERIFY_TOKEN" | npx wrangler secret put WEBHOOK_VERIFY_TOKEN --env development
           printf '%s' "$META_APP_SECRET" | npx wrangler secret put META_APP_SECRET --env development
 
+      - name: Patch Custom Domains (Development)
+        working-directory: ./backend
+        run: |
+          sed -i 's/DEV_BACKEND_HOST/${{ vars.APP_BACKEND_URL }}/g' wrangler.json
+
       - name: Deploy Backend
         working-directory: ./backend
         run: |
           set -euo pipefail
           npx wrangler deploy --env development \
-            --var ALLOWED_ORIGIN:${{ vars.ALLOWED_ORIGIN }} \
+            --var ALLOWED_ORIGIN:https://${{ vars.APP_FRONTEND_URL }} \
             --var SUPABASE_URL:${{ vars.SUPABASE_URL }} \
             --var META_APP_ID:${{ vars.META_APP_ID }} \
             --var ENVIRONMENT:${{ vars.ENVIRONMENT }}
@@ -203,16 +208,36 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_API_URL: https://${{ vars.APP_BACKEND_URL }}
           VITE_META_APP_ID: ${{ vars.META_APP_ID }}
           VITE_META_CONFIG_ID: ${{ vars.VITE_META_CONFIG_ID }}
         run: npm run build
+
+      - name: Sync Runtime Config to Cloudflare (Development)
+        working-directory: ./frontend
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$VITE_SUPABASE_ANON_KEY" | npx wrangler secret put VITE_SUPABASE_ANON_KEY --env development
+
+      - name: Patch Custom Domains (Development)
+        working-directory: ./frontend
+        run: |
+          sed -i 's/DEV_FRONTEND_HOST/${{ vars.APP_FRONTEND_URL }}/g' wrangler.json
 
       - name: Deploy Frontend
         working-directory: ./frontend
         run: |
           set -euo pipefail
-          npx wrangler deploy --env development
+          npx wrangler deploy --env development \
+            --var SUPABASE_URL:${{ vars.SUPABASE_URL }} \
+            --var META_APP_ID:${{ vars.META_APP_ID }} \
+            --var VITE_META_CONFIG_ID:${{ vars.VITE_META_CONFIG_ID }} \
+            --var ENVIRONMENT:${{ vars.ENVIRONMENT }} \
+            --var APP_BACKEND_URL:https://${{ vars.APP_BACKEND_URL }} \
+            --var APP_FRONTEND_URL:https://${{ vars.APP_FRONTEND_URL }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
