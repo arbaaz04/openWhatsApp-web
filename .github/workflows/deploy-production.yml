@@ -5,8 +5,9 @@ on:
       - production
 
 jobs:
-  lint:
-    name: Lint
+jobs:
+  backend-lint:
+    name: Backend Lint
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -21,8 +22,24 @@ jobs:
       - run: npm ci
       - run: npm run lint
 
-  audit:
-    name: Security Audit
+  frontend-lint:
+    name: Frontend Lint
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+
+  backend-audit:
+    name: Backend Security Audit
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -37,10 +54,26 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
 
+  frontend-audit:
+    name: Frontend Security Audit
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=high
+
   test:
     name: Tests
     runs-on: ubuntu-24.04
-    needs: [lint]
+    needs: [backend-lint]
     defaults:
       run:
         working-directory: backend
@@ -56,7 +89,7 @@ jobs:
 
   deploy:
     runs-on: ubuntu-24.04
-    needs: [lint, audit, test]
+    needs: [backend-lint, backend-audit, test]
     environment: production
     permissions:
       contents: read
@@ -123,7 +156,6 @@ jobs:
           printf '%s' "$WEBHOOK_VERIFY_TOKEN" | npx wrangler secret put WEBHOOK_VERIFY_TOKEN --env production
           printf '%s' "$META_APP_SECRET" | npx wrangler secret put META_APP_SECRET --env production
 
-      # Deploy Backend via Wrangler
       - name: Deploy Backend
         working-directory: ./backend
         run: |
@@ -136,16 +168,35 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
-      # Frontend deploy is intentionally disabled until the Cloudflare Pages project exists.
-      # Re-enable by replacing "false" with "true" and ensuring project "whatflow-frontend" exists.
+  deploy-frontend:
+    name: Deploy Frontend (Production)
+    runs-on: ubuntu-24.04
+    needs: [frontend-lint, frontend-audit]
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+
       - name: Build Frontend
-        if: ${{ false }}
         working-directory: ./frontend
+        env:
+          VITE_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_META_APP_ID: ${{ vars.META_APP_ID }}
+          VITE_META_CONFIG_ID: ${{ vars.VITE_META_CONFIG_ID }}
         run: npm run build
+
       - name: Deploy Frontend
-        if: ${{ false }}
         working-directory: ./frontend
-        run: npx wrangler pages deploy dist --project-name whatflow-frontend
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --env production
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
