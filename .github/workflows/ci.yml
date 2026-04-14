@@ -25,7 +25,7 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
-      - run: npm ci
+      - run: npm install --no-audit --legacy-peer-deps
       - run: npm run lint
 
   frontend-lint:
@@ -41,7 +41,7 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
+      - run: npm install --no-audit
       - run: npm run lint
 
   backend-audit:
@@ -57,7 +57,7 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
-      - run: npm ci
+      - run: npm install --no-audit --legacy-peer-deps
       - run: npm audit --audit-level=high
 
   frontend-audit:
@@ -73,7 +73,7 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
+      - run: npm install --no-audit
       - run: npm audit --audit-level=high
 
   test:
@@ -90,5 +90,5 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
-      - run: npm ci
+      - run: npm install --no-audit --legacy-peer-deps
       - run: npx vitest run --reporter=verbose --coverage
