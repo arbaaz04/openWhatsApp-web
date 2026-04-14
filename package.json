@@ -3,15 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "WhatFlow Web - Developer-First WhatsApp Infrastructure",
-  "workspaces": [
-    "frontend",
-    "backend"
-  ],
   "scripts": {
-    "dev": "npm run dev --workspaces",
-    "build": "npm run build --workspaces",
-    "lint": "npm run lint --workspaces",
-    "test": "npm run test --workspaces",
     "prepare": "node -e \"if (process.env.CI !== 'true') require('child_process').execSync('husky', {stdio:'inherit'})\" || true"
   },
   "devDependencies": {
