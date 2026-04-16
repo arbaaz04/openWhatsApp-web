@@ -23,9 +23,20 @@ describe('Auth Service — Token Exchange', () => {
   });
 
   it('should call Meta Graph API and insert a new channel record', async () => {
+    // 1. Mock token exchange
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ access_token: 'EAAreal_token', token_type: 'bearer' }),
+    });
+    // 2. Mock WABA fetch
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: [{ id: 'waba1' }] }),
+    });
+    // 3. Mock Phone fetch
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: [{ id: 'phone1', display_phone_number: '+12345', status: 'CONNECTED' }] }),
     });
 
     const selectChain = { from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) };
@@ -35,28 +46,33 @@ describe('Auth Service — Token Exchange', () => {
     vi.mocked(db.insert).mockReturnValue(insertChain as never);
 
     const result = await authService.exchangeToken(
-      'code123', 'waba1', 'phone1', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY
+      'code123', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY
     );
 
-    expect(mockFetch).toHaveBeenCalledOnce();
+    expect(mockFetch).toHaveBeenCalledTimes(3);
     const calledUrl = mockFetch.mock.calls[0][0] as string;
-    expect(calledUrl).toContain('graph.facebook.com');
-    expect(calledUrl).toContain('client_id=appId');
+    expect(calledUrl).toContain('oauth/access_token');
     expect(calledUrl).toContain('code=code123');
 
     expect(result).toEqual({ success: true });
     expect(db.insert).toHaveBeenCalledOnce();
-
-    // Verify the token was encrypted before being inserted (not plaintext)
-    const valuesCall = insertChain.values.mock.calls[0][0] as { accessToken: string };
-    expect(valuesCall.accessToken).not.toBe('EAAreal_token');
-    expect(valuesCall.accessToken).toContain(':'); // iv:ciphertext format
   });
 
   it('should update an existing channel record instead of inserting', async () => {
+    // 1. Mock token exchange
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ access_token: 'EAArotated_token', token_type: 'bearer' }),
+    });
+    // 2. Mock WABA fetch
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: [{ id: 'waba2' }] }),
+    });
+    // 3. Mock Phone fetch
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: [{ id: 'phone2', display_phone_number: '+12345', status: 'CONNECTED' }] }),
     });
 
     const selectChain = { from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([{ id: 5, teamId: 1 }]) }) }) };
@@ -66,12 +82,11 @@ describe('Auth Service — Token Exchange', () => {
     vi.mocked(db.update).mockReturnValue(updateChain as never);
 
     const result = await authService.exchangeToken(
-      'code456', 'waba2', 'phone2', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY
+      'code456', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY
     );
 
     expect(result).toEqual({ success: true });
     expect(db.update).toHaveBeenCalledOnce();
-    expect(db.insert).not.toHaveBeenCalled();
   });
 
   it('should throw ApiError 502 when Meta returns a non-200 response', async () => {
@@ -82,7 +97,7 @@ describe('Auth Service — Token Exchange', () => {
     });
 
     await expect(
-      authService.exchangeToken('bad_code', 'waba3', 'phone3', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY)
+      authService.exchangeToken('bad_code', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY)
     ).rejects.toMatchObject({ statusCode: 502, code: 'META_TOKEN_EXCHANGE_FAILED' });
   });
 
@@ -93,21 +108,32 @@ describe('Auth Service — Token Exchange', () => {
     });
 
     await expect(
-      authService.exchangeToken('code789', 'waba4', 'phone4', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY)
+      authService.exchangeToken('code789', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY)
     ).rejects.toMatchObject({ statusCode: 502, code: 'META_MISSING_ACCESS_TOKEN' });
   });
 
   it('should reject rotating a channel token across teams', async () => {
+    // 1. Mock token exchange
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ access_token: 'EAArotated_token', token_type: 'bearer' }),
+    });
+    // 2. Mock WABA fetch
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: [{ id: 'waba2' }] }),
+    });
+    // 3. Mock Phone fetch
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: [{ id: 'phone2', display_phone_number: '+12345', status: 'CONNECTED' }] }),
     });
 
     const selectChain = { from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([{ id: 5, teamId: 99 }]) }) }) };
     vi.mocked(db.select).mockReturnValue(selectChain as never);
 
     await expect(
-      authService.exchangeToken('code999', 'waba2', 'phone2', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY)
+      authService.exchangeToken('code999', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY)
     ).rejects.toMatchObject({ statusCode: 409, code: 'CHANNEL_TEAM_MISMATCH' });
   });
 

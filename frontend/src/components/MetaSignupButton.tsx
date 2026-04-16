@@ -1,15 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useSearchParams } from 'react-router-dom';
 import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export const MetaSignupButton: React.FC = () => {
   const { session, teams } = useAuth();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [status, setStatus] = useState<'idle' | 'linking' | 'success' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
-
-  const code = searchParams.get('code');
 
   const handleExchange = useCallback(async (authCode: string) => {
     setStatus('linking');
@@ -32,21 +28,29 @@ export const MetaSignupButton: React.FC = () => {
       if (!res.ok) throw new Error(data.message || 'Linking failed');
       
       setStatus('success');
-      // Clean up the URL
-      searchParams.delete('code');
-      setSearchParams(searchParams);
     } catch (e) {
       console.error('Exchange Failed', e);
       setStatus('error');
       setError(e instanceof Error ? e.message : 'Unknown error');
     }
-  }, [teams, session, searchParams, setSearchParams]);
+  }, [teams, session]);
 
   useEffect(() => {
-    if (code && session && status === 'idle') {
-      handleExchange(code);
-    }
-  }, [code, session, status, handleExchange]);
+    const handleMessage = (event: MessageEvent) => {
+      // Security: Validate the origin
+      if (event.origin !== window.location.origin) return;
+
+      if (event.data?.type === 'META_AUTH_CODE') {
+        handleExchange(event.data.code);
+      } else if (event.data?.type === 'META_AUTH_ERROR') {
+        setStatus('error');
+        setError(event.data.error || 'Authentication aborted');
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [handleExchange]);
 
   const handleLaunchSignup = () => {
     const appId = import.meta.env.VITE_META_APP_ID;
@@ -55,12 +59,28 @@ export const MetaSignupButton: React.FC = () => {
       return;
     }
 
-    const redirectUri = `${window.location.origin}/phones`;
+    const redirectUri = `${window.location.origin}/auth/meta-callback`;
     const scopes = 'whatsapp_business_management,whatsapp_business_messaging';
     
     const oauthUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scopes}&response_type=code`;
     
-    window.location.href = oauthUrl;
+    // Calculate popup position (centered)
+    const width = 600;
+    const height = 700;
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
+
+    const popup = window.open(
+      oauthUrl,
+      'MetaSignup',
+      `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,resizable=yes`
+    );
+
+    if (popup) {
+      popup.focus();
+    } else {
+      alert('Popup blocked! Please allow popups for this site.');
+    }
   };
 
   if (status === 'success') {

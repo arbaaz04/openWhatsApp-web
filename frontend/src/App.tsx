@@ -9,6 +9,7 @@ import { Flows } from './components/flows/Flows';
 import { Templates } from './components/templates/Templates';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Auth } from './pages/Auth';
+import { MetaCallback } from './pages/MetaCallback';
 import { ComingSoon } from './components/layout/ComingSoon';
 import './index.css';
 
@@ -67,6 +68,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/auth" element={<Auth />} />
+          <Route path="/auth/meta-callback" element={<MetaCallback />} />
           
           <Route element={<AuthGuard><DashboardLayout /></AuthGuard>}>
             
