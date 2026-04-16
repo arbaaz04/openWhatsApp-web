@@ -1,4 +1,4 @@
-import { Smartphone, Info, ChevronRight, Cpu } from 'lucide-react';
+import { Smartphone, Info, Cpu } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { MetaSignupButton } from '../MetaSignupButton';
 

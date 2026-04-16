@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSearchParams } from 'react-router-dom';
 import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
@@ -15,9 +15,9 @@ export const MetaSignupButton: React.FC = () => {
     if (code && session && status === 'idle') {
       handleExchange(code);
     }
-  }, [code, session]);
+  }, [code, session, status, handleExchange]);
 
-  const handleExchange = async (authCode: string) => {
+  const handleExchange = useCallback(async (authCode: string) => {
     setStatus('linking');
     try {
       const teamId = profile?.teams?.[0]?.teamId;
@@ -46,7 +46,7 @@ export const MetaSignupButton: React.FC = () => {
       setStatus('error');
       setError(e instanceof Error ? e.message : 'Unknown error');
     }
-  };
+  }, [profile, session, searchParams, setSearchParams]);
 
   const handleLaunchSignup = () => {
     const appId = import.meta.env.VITE_META_APP_ID;
