@@ -4,23 +4,17 @@ import { useSearchParams } from 'react-router-dom';
 import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export const MetaSignupButton: React.FC = () => {
-  const { session, profile } = useAuth();
+  const { session, teams } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [status, setStatus] = useState<'idle' | 'linking' | 'success' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
 
   const code = searchParams.get('code');
 
-  useEffect(() => {
-    if (code && session && status === 'idle') {
-      handleExchange(code);
-    }
-  }, [code, session, status, handleExchange]);
-
   const handleExchange = useCallback(async (authCode: string) => {
     setStatus('linking');
     try {
-      const teamId = profile?.teams?.[0]?.teamId;
+      const teamId = teams?.[0]?.teamId;
       if (!teamId) throw new Error('No team found for current user');
 
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
@@ -46,7 +40,13 @@ export const MetaSignupButton: React.FC = () => {
       setStatus('error');
       setError(e instanceof Error ? e.message : 'Unknown error');
     }
-  }, [profile, session, searchParams, setSearchParams]);
+  }, [teams, session, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (code && session && status === 'idle') {
+      handleExchange(code);
+    }
+  }, [code, session, status, handleExchange]);
 
   const handleLaunchSignup = () => {
     const appId = import.meta.env.VITE_META_APP_ID;
