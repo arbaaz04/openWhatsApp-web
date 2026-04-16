@@ -62,6 +62,38 @@ async function fetchMetaAccessToken(
 }
 
 /**
+ * Fetches the first available WhatsApp Business Account ID for the user.
+ */
+async function fetchWabaId(accessToken: string): Promise<string> {
+  const url = `https://graph.facebook.com/v21.0/me/whatsapp_business_accounts?access_token=${accessToken}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new ApiError(502, 'Failed to fetch WABA accounts from Meta', 'META_WABA_FETCH_FAILED');
+  
+  const data = await res.json() as { data: Array<{ id: string }> };
+  if (!data.data || data.data.length === 0) {
+    throw new ApiError(404, 'No WhatsApp Business Accounts found for this user', 'META_NO_WABA_FOUND');
+  }
+  return data.data[0].id;
+}
+
+/**
+ * Fetches the first available Phone Number ID and the phone number string for a WABA.
+ */
+async function fetchPhoneNumberInfo(wabaId: string, accessToken: string): Promise<{ id: string; display_phone_number: string }> {
+  const url = `https://graph.facebook.com/v21.0/${wabaId}/phone_numbers?access_token=${accessToken}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new ApiError(502, 'Failed to fetch phone numbers from Meta', 'META_PHONE_FETCH_FAILED');
+
+  const data = await res.json() as { data: Array<{ id: string, display_phone_number: string, status: string }> };
+  const active = data.data.find(p => p.status === 'CONNECTED' || p.status === 'VERIFIED') || data.data[0];
+  
+  if (!active) {
+    throw new ApiError(404, 'No phone numbers found in the WhatsApp Business Account', 'META_NO_PHONE_FOUND');
+  }
+  return { id: active.id, display_phone_number: active.display_phone_number };
+}
+
+/**
  * Service responsible for WhatsApp Cloud API authentication flows.
  * Converts short-lived embedded signup codes into persisted channel records.
  */
@@ -83,16 +115,20 @@ export const authService = {
    */
   async exchangeToken(
     code: string,
-    wabaId: string,
-    phoneNumberId: string,
     teamId: number,
     clientId: string,
     clientSecret: string,
     encryptionKey: string
   ): Promise<{ success: true }> {
-    logger.info('Initiating Meta token exchange', { wabaId, phoneNumberId, teamId });
+    logger.info('Initiating Meta token exchange', { teamId });
 
     const plainAccessToken = await fetchMetaAccessToken(clientId, clientSecret, code);
+
+    // Automaticaly discover business IDs
+    const wabaId = await fetchWabaId(plainAccessToken);
+    const { id: phoneNumberId, display_phone_number: phoneNumber } = await fetchPhoneNumberInfo(wabaId, plainAccessToken);
+    
+    logger.info('Discovered business IDs', { wabaId, phoneNumberId, phoneNumber });
 
     // Encrypt before writing to the database — never store plaintext tokens
     const encryptedToken = await encrypt(plainAccessToken, encryptionKey);
@@ -125,10 +161,11 @@ export const authService = {
           type: 'business_app',
           wabaId,
           whatsappId: phoneNumberId,
+          phoneNumber,
           accessToken: encryptedToken,
         });
 
-        logger.info('Channel onboarded', { wabaId, phoneNumberId });
+        logger.info('Channel onboarded', { wabaId, phoneNumberId, phoneNumber });
       }
 
       return { success: true };

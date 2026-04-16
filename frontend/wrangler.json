@@ -17,7 +17,6 @@
         "ENVIRONMENT": "production",
         "SUPABASE_URL": "PLACEHOLDER",
         "META_APP_ID": "PLACEHOLDER",
-        "VITE_META_CONFIG_ID": "PLACEHOLDER",
         "APP_BACKEND_URL": "PLACEHOLDER",
         "APP_FRONTEND_URL": "PLACEHOLDER"
       }
@@ -31,7 +30,6 @@
         "ENVIRONMENT": "development",
         "SUPABASE_URL": "PLACEHOLDER",
         "META_APP_ID": "PLACEHOLDER",
-        "VITE_META_CONFIG_ID": "PLACEHOLDER",
         "APP_BACKEND_URL": "PLACEHOLDER",
         "APP_FRONTEND_URL": "PLACEHOLDER"
       }

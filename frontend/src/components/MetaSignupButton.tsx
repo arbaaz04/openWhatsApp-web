@@ -1,98 +1,110 @@
-import React, { useEffect } from 'react';
-
-declare global {
-  interface Window {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    FB: any;
-    fbAsyncInit: () => void;
-  }
-}
-
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useSearchParams } from 'react-router-dom';
+import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
-/**
- * Meta Embedded Signup Button
- * Handles the "Coexistence" flow for WhatsApp Business API.
- */
 export const MetaSignupButton: React.FC = () => {
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [status, setStatus] = useState<'idle' | 'linking' | 'success' | 'error'>('idle');
+  const [error, setError] = useState<string | null>(null);
+
+  const code = searchParams.get('code');
+
   useEffect(() => {
-    // Load the Facebook SDK
-    window.fbAsyncInit = function () {
-      window.FB.init({
-        appId: import.meta.env.VITE_META_APP_ID || 'dummy_app_id',
-        autoLogAppEvents: true,
-        xfbml: true,
-        version: 'v25.0',
-      });
-    };
-
-    (function (d, s, id) {
-      const fjs = d.getElementsByTagName(s)[0];
-      if (d.getElementById(id)) {
-        return;
-      }
-      const js = d.createElement(s) as HTMLScriptElement;
-      js.id = id;
-      js.src = 'https://connect.facebook.net/en_US/sdk.js';
-      fjs.parentNode?.insertBefore(js, fjs);
-    })(document, 'script', 'facebook-jssdk');
-  }, []);
-
-  const handleLaunchSignup = () => {
-    if (!window.FB) {
-      console.error('Facebook SDK not loaded');
-      alert('Facebook SDK not loaded. Please check your internet connection or ad blocker.');
-      return;
+    if (code && session && status === 'idle') {
+      handleExchange(code);
     }
+  }, [code, session]);
 
-    // Launch the Oauth popup
-    window.FB.login(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (response: any) => {
-        if (response.authResponse) {
-          const code = response.authResponse.code;
-          // In a real flow, wabaId and phoneId are often extracted from the response or predefined
-          exchangeToken(code);
-        } else {
-          console.error('User cancelled login or did not fully authorize.');
-        }
-      },
-      {
-        config_id: import.meta.env.VITE_META_CONFIG_ID,
-        response_type: 'code',
-        override_default_response_type: true,
-        feature_type: 'whatsapp_business_app_onboarding',
-      }
-    );
-  };
-
-  const exchangeToken = async (code: string) => {
+  const handleExchange = async (authCode: string) => {
+    setStatus('linking');
     try {
-      if (!session) throw new Error('Not authenticated');
+      const teamId = profile?.teams?.[0]?.teamId;
+      if (!teamId) throw new Error('No team found for current user');
 
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
       const res = await fetch(`${apiUrl}/api/auth/embedded-signup`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+          'Authorization': `Bearer ${session?.access_token}`
         },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code: authCode, teamId }),
       });
+
       const data = await res.json();
-      console.log('Exchange Result:', data);
+      
+      if (!res.ok) throw new Error(data.message || 'Linking failed');
+      
+      setStatus('success');
+      // Clean up the URL
+      searchParams.delete('code');
+      setSearchParams(searchParams);
     } catch (e) {
       console.error('Exchange Failed', e);
+      setStatus('error');
+      setError(e instanceof Error ? e.message : 'Unknown error');
     }
   };
+
+  const handleLaunchSignup = () => {
+    const appId = import.meta.env.VITE_META_APP_ID;
+    if (!appId) {
+      alert('Meta App ID is not configured (VITE_META_APP_ID)');
+      return;
+    }
+
+    const redirectUri = `${window.location.origin}/phones`;
+    const scopes = 'whatsapp_business_management,whatsapp_business_messaging';
+    
+    const oauthUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scopes}&response_type=code`;
+    
+    window.location.href = oauthUrl;
+  };
+
+  if (status === 'success') {
+    return (
+      <div className="flex items-center gap-2 text-green-600 font-bold bg-green-50 px-4 py-2 rounded-lg border border-green-200">
+        <CheckCircle2 className="w-5 h-5" />
+        Connected Successfully
+      </div>
+    );
+  }
+
+  if (status === 'error') {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 text-red-600 font-bold bg-red-50 px-4 py-2 rounded-lg border border-red-200">
+          <AlertCircle className="w-5 h-5" />
+          {error || 'Linking failed'}
+        </div>
+        <button
+          onClick={handleLaunchSignup}
+          className="text-gray-500 hover:text-gray-700 text-[12px] font-bold underline px-4"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
 
   return (
     <button
       onClick={handleLaunchSignup}
-      className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors"
+      disabled={status === 'linking'}
+      className="inline-flex items-center gap-2 bg-[#128C7E] hover:bg-[#075E54] text-white font-bold py-2.5 px-6 rounded-xl transition-all shadow-md group disabled:opacity-50"
     >
-      Connect WhatsApp via Meta
+      {status === 'linking' ? (
+        <>
+          <Loader2 className="w-5 h-5 animate-spin" />
+          Connecting...
+        </>
+      ) : (
+        <>
+          Connect via Meta
+        </>
+      )}
     </button>
   );
 };
