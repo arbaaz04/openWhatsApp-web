@@ -28,7 +28,7 @@ async function fetchMetaAccessToken(
   clientSecret: string,
   code: string
 ): Promise<string> {
-  const url = new URL('https://graph.facebook.com/v21.0/oauth/access_token');
+  const url = new URL('https://graph.facebook.com/v25.0/oauth/access_token');
   url.searchParams.set('client_id', clientId);
   url.searchParams.set('client_secret', clientSecret);
   url.searchParams.set('code', code);
@@ -65,7 +65,7 @@ async function fetchMetaAccessToken(
  * Fetches the first available WhatsApp Business Account ID for the user.
  */
 async function fetchWabaId(accessToken: string): Promise<string> {
-  const url = `https://graph.facebook.com/v21.0/me/whatsapp_business_accounts?access_token=${accessToken}`;
+  const url = `https://graph.facebook.com/v25.0/me/whatsapp_business_accounts?access_token=${accessToken}`;
   const res = await fetch(url);
   if (!res.ok) throw new ApiError(502, 'Failed to fetch WABA accounts from Meta', 'META_WABA_FETCH_FAILED');
   
@@ -80,7 +80,7 @@ async function fetchWabaId(accessToken: string): Promise<string> {
  * Fetches the first available Phone Number ID and the phone number string for a WABA.
  */
 async function fetchPhoneNumberInfo(wabaId: string, accessToken: string): Promise<{ id: string; display_phone_number: string }> {
-  const url = `https://graph.facebook.com/v21.0/${wabaId}/phone_numbers?access_token=${accessToken}`;
+  const url = `https://graph.facebook.com/v25.0/${wabaId}/phone_numbers?access_token=${accessToken}`;
   const res = await fetch(url);
   if (!res.ok) throw new ApiError(502, 'Failed to fetch phone numbers from Meta', 'META_PHONE_FETCH_FAILED');
 
@@ -99,36 +99,65 @@ async function fetchPhoneNumberInfo(wabaId: string, accessToken: string): Promis
  */
 export const authService = {
   /**
-   * Exchanges an embedded signup code for a long-lived access token,
-   * encrypts it with AES-256-GCM, then upserts the channel in the database.
+   * Exchanges an OAuth authorization code for a long-lived access token,
+   * optionally auto-discovers the associated WABA ID and Phone Number,
+   * encrypts the token with AES-256-GCM, then upserts the channel in the database.
    *
    * Access tokens are encrypted at rest using the `DATA_ENCRYPTION_KEY` binding.
    * They are never stored in plaintext and never returned to the frontend.
    *
-   * @param code              - Short-lived code from Meta's embedded signup JS callback
-   * @param wabaId            - WhatsApp Business Account ID
-   * @param phoneNumberId     - Phone Number ID associated with the channel
-  * @param teamId            - Team ID that owns this channel
+   * Flow (with auto-discovery):
+   * 1. Exchange code for access token via Meta Graph API
+   * 2. Fetch the user's WhatsApp Business Account ID (first available)
+   * 3. Fetch the account's first verified/connected phone number
+   * 4. Encrypt the token using AES-256-GCM
+   * 5. Store or update the channel record in the database
+   *
+   * Flow (with provided IDs from embedded signup):
+   * 1. Exchange code for access token via Meta Graph API
+   * 2. Skip auto-discovery (use provided wabaId and phoneNumberId)
+   * 3. Encrypt the token using AES-256-GCM
+   * 4. Store or update the channel record in the database
+   *
+   * @param code              - Short-lived code from Meta's OAuth callback
+   * @param teamId            - Team ID that owns this channel
    * @param clientId          - Meta App ID (from environment bindings)
    * @param clientSecret      - Meta App Secret (from environment bindings)
    * @param encryptionKey     - DATA_ENCRYPTION_KEY binding (64-char hex)
+   * @param wabaId            - (Optional) WhatsApp Business Account ID from embedded signup
+   * @param phoneNumberId     - (Optional) Phone Number ID from embedded signup
+   * @returns Promise resolving to { success: true }
+   * @throws {ApiError 502}   If Meta API calls fail
+   * @throws {ApiError 409}   If phone number already connected to different team
+   * @throws {ApiError 500}   If database persistence fails
    */
   async exchangeToken(
     code: string,
     teamId: number,
     clientId: string,
     clientSecret: string,
-    encryptionKey: string
+    encryptionKey: string,
+    wabaId?: string,
+    phoneNumberId?: string
   ): Promise<{ success: true }> {
-    logger.info('Initiating Meta token exchange', { teamId });
+    logger.info('Initiating Meta token exchange', { teamId, hasWabaId: !!wabaId, hasPhoneNumberId: !!phoneNumberId });
 
     const plainAccessToken = await fetchMetaAccessToken(clientId, clientSecret, code);
 
-    // Automaticaly discover business IDs
-    const wabaId = await fetchWabaId(plainAccessToken);
-    const { id: phoneNumberId, display_phone_number: phoneNumber } = await fetchPhoneNumberInfo(wabaId, plainAccessToken);
+    // Use provided IDs or auto-discover
+    let finalWabaId = wabaId;
+    let finalPhoneNumberId = phoneNumberId;
+    let phoneNumber = '';
+
+    if (!wabaId || !phoneNumberId) {
+      // Auto-discover if not provided
+      finalWabaId = await fetchWabaId(plainAccessToken);
+      const phoneInfo = await fetchPhoneNumberInfo(finalWabaId, plainAccessToken);
+      finalPhoneNumberId = phoneInfo.id;
+      phoneNumber = phoneInfo.display_phone_number;
+    }
     
-    logger.info('Discovered business IDs', { wabaId, phoneNumberId, phoneNumber });
+    logger.info('Using business IDs', { wabaId: finalWabaId, phoneNumberId: finalPhoneNumberId, phoneNumber });
 
     // Encrypt before writing to the database — never store plaintext tokens
     const encryptedToken = await encrypt(plainAccessToken, encryptionKey);
@@ -137,7 +166,7 @@ export const authService = {
       const existing = await db
         .select({ id: channels.id, teamId: channels.teamId })
         .from(channels)
-        .where(eq(channels.whatsappId, phoneNumberId))
+        .where(eq(channels.whatsappId, finalPhoneNumberId))
         .limit(1);
 
       if (existing.length > 0) {
@@ -151,21 +180,21 @@ export const authService = {
 
         await db
           .update(channels)
-          .set({ wabaId, accessToken: encryptedToken })
-          .where(eq(channels.whatsappId, phoneNumberId));
+          .set({ wabaId: finalWabaId, accessToken: encryptedToken })
+          .where(eq(channels.whatsappId, finalPhoneNumberId));
 
-        logger.info('Channel credentials rotated', { wabaId, phoneNumberId });
+        logger.info('Channel credentials rotated', { wabaId: finalWabaId, phoneNumberId: finalPhoneNumberId });
       } else {
         await db.insert(channels).values({
           teamId,
           type: 'business_app',
-          wabaId,
-          whatsappId: phoneNumberId,
+          wabaId: finalWabaId,
+          whatsappId: finalPhoneNumberId,
           phoneNumber,
           accessToken: encryptedToken,
         });
 
-        logger.info('Channel onboarded', { wabaId, phoneNumberId, phoneNumber });
+        logger.info('Channel onboarded', { wabaId: finalWabaId, phoneNumberId: finalPhoneNumberId, phoneNumber });
       }
 
       return { success: true };

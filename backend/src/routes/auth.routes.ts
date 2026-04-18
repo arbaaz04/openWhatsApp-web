@@ -14,11 +14,14 @@ type Variables = { requestId: string; userId: string; userEmail: string };
 const authRouter = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>();
 
 /**
- * Validates the embedded signup callback body from the Meta JS SDK.
+ * Validates the embedded signup callback body from the WhatsApp Embedded Signup flow.
+ * Receives: code, wabaId, phoneNumberId from frontend (obtained via postMessage event)
  */
 const embeddedSignupSchema = z.object({
   code: z.string().min(1, 'Authorization code is required'),
   teamId: z.number().int().positive('teamId must be a positive integer'),
+  wabaId: z.string().min(1, 'wabaId is required'),
+  phoneNumberId: z.string().min(1, 'phoneNumberId is required'),
 });
 
 const embeddedSignupRoute = createRoute({
@@ -53,9 +56,9 @@ authRouter.use('/embedded-signup', rateLimiter(20));
 authRouter.openapi(embeddedSignupRoute, async (c) => {
   const log = createLogger({ requestId: c.get('requestId') });
   const userId = c.get('userId');
-  const { code, teamId } = c.req.valid('json');
+  const { code, teamId, wabaId, phoneNumberId } = c.req.valid('json');
 
-  log.info('Embedded signup callback received', { teamId });
+  log.info('Embedded signup callback received', { teamId, wabaId, phoneNumberId });
 
   const { META_APP_ID: clientId, META_APP_SECRET: clientSecret } = c.env;
 
@@ -77,15 +80,18 @@ authRouter.openapi(embeddedSignupRoute, async (c) => {
     throw new ApiError(403, 'You do not have access to this team', 'FORBIDDEN');
   }
 
+  // Exchange token using provided WABA & phone number IDs (no auto-discovery needed)
   await authService.exchangeToken(
     code,
     teamId,
     clientId,
     clientSecret,
-    c.env.DATA_ENCRYPTION_KEY
+    c.env.DATA_ENCRYPTION_KEY,
+    wabaId,
+    phoneNumberId
   );
 
-  log.info('Channel connected successfully', { wabaId, phoneNumberId });
+  log.info('Channel connected successfully');
 
   return c.json(
     { success: true, message: 'WhatsApp channel connected successfully.' },

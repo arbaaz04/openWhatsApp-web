@@ -1,37 +1,26 @@
-import React, { useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import React from 'react';
 
 /**
- * MetaCallback - A specialized component for the OAuth popup window.
- * It extracts the ?code= from the URL and sends it to the main window (window.opener).
+ * MetaCallback - Legacy fallback page (no longer needed with embedded signup)
+ * 
+ * With WhatsApp Embedded Signup using FB.login, the OAuth flow is handled
+ * entirely within the Facebook SDK without needing a separate callback page.
+ * 
+ * This page remains as a fallback in case the route is accessed directly.
  */
 export const MetaCallback: React.FC = () => {
-  const [searchParams] = useSearchParams();
-  const code = searchParams.get('code');
-  const error = searchParams.get('error_description') || searchParams.get('error');
-
-  useEffect(() => {
-    // If we have a code or an error, send it to the opener
-    if (window.opener) {
-      if (code) {
-        window.opener.postMessage({ type: 'META_AUTH_CODE', code }, window.location.origin);
-      } else if (error) {
-        window.opener.postMessage({ type: 'META_AUTH_ERROR', error }, window.location.origin);
-      }
-      
-      // Close the popup after a small delay to ensure message is sent
-      setTimeout(() => window.close(), 100);
-    } else {
-      // If no opener, just redirect to dashboard (fallback)
+  React.useEffect(() => {
+    // Redirect to dashboard if someone accesses this page directly
+    const timer = setTimeout(() => {
       window.location.href = '/dashboard';
-    }
-  }, [code, error]);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#F9FAFB] p-6 text-center">
-      <div className="w-12 h-12 border-4 border-[#128C7E] border-t-transparent rounded-full animate-spin mb-4" />
-      <h2 className="text-lg font-bold text-gray-900">Connecting to Meta...</h2>
-      <p className="text-gray-500 text-sm mt-2">This window will close automatically.</p>
+      <h2 className="text-lg font-bold text-gray-900">Redirecting...</h2>
+      <p className="text-gray-500 text-sm mt-2">This page is no longer used with Embedded Signup.</p>
     </div>
   );
 };
