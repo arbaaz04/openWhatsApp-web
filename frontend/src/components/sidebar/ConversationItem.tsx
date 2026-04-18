@@ -6,7 +6,6 @@ interface ConversationItemProps {
   name: string;
   lastMessage: string;
   time: string;
-  unreadCount?: number;
   avatarColor?: string;
 }
 
@@ -15,15 +14,15 @@ export function ConversationItem({
   name,
   lastMessage,
   time,
-  unreadCount = 0,
   avatarColor = 'bg-gray-200'
 }: ConversationItemProps) {
   const initials = name
     .split(' ')
+    .filter(Boolean)
     .map((n) => n[0])
     .join('')
     .substring(0, 2)
-    .toUpperCase();
+    .toUpperCase() || 'C';
 
   return (
     <NavLink
@@ -57,34 +56,19 @@ export function ConversationItem({
               <span
                 className={cn(
                   'text-[13px] truncate',
-                  isActive || unreadCount > 0 ? 'font-semibold text-gray-900' : 'font-medium text-gray-800'
+                  isActive ? 'font-semibold text-gray-900' : 'font-medium text-gray-800'
                 )}
               >
                 {name}
               </span>
-              <span
-                className={cn(
-                  'text-[11px] whitespace-nowrap pl-2',
-                  unreadCount > 0 ? 'text-[#128C7E] font-semibold' : 'text-gray-500'
-                )}
-              >
+              <span className="text-[11px] whitespace-nowrap pl-2 text-gray-500">
                 {time}
               </span>
             </div>
             <div className="flex justify-between items-center gap-2">
-              <span
-                className={cn(
-                  'text-[12px] truncate leading-tight',
-                  unreadCount > 0 ? 'font-medium text-gray-900' : 'text-gray-500'
-                )}
-              >
+              <span className="text-[12px] truncate leading-tight text-gray-500">
                 {lastMessage}
               </span>
-              {unreadCount > 0 && (
-                <div className="w-[18px] h-[18px] shrink-0 rounded-full bg-[#128C7E] text-white text-[10px] font-bold flex items-center justify-center mt-0.5">
-                  {unreadCount}
-                </div>
-              )}
             </div>
           </div>
         </>

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { MoreHorizontal, Info, ArrowLeft, Loader2 } from 'lucide-react';
 import { Composer } from './Composer';
 import { MessageBubble } from './MessageBubble';
-import { useParams, NavLink } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -20,9 +20,11 @@ interface ChatMessage {
 
 export function ChatPane() {
   const { conversationId } = useParams();
+  const navigate = useNavigate();
   const [replyingTo, setReplyingTo] = useState<BubbleMessage | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [customerNumber, setCustomerNumber] = useState<string>('');
   const { session } = useAuth();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -36,6 +38,10 @@ export function ChatPane() {
       setLoading(true);
       try {
         const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
+        
+        // Fetch conversation details to get the number (alternatively this could be in metadata)
+        // For now, we'll try to find it from the first message or fetch it if possible.
+        
         const res = await fetch(`${apiUrl}/api/conversations/${conversationId}/messages`, {
           headers: {
             'Authorization': `Bearer ${session.access_token}`
@@ -44,6 +50,9 @@ export function ChatPane() {
         if (res.ok) {
           const data = await res.json();
           if (data.success) {
+            // Find customer number if not set (usually the backend returns this in a dedicated conv fetch)
+            // But here we rely on the messages.
+            
             // Backend returns newest first, we want oldest first for display
             const formatted = data.messages.map((m: { id: number; body: string | null; direction: string; createdAt: string }) => ({
               id: String(m.id),
@@ -65,6 +74,32 @@ export function ChatPane() {
 
     fetchMessages();
   }, [conversationId, session]);
+
+  // Try to find the customer number from the sidebar context or similar. 
+  // For now, we'll just use a placeholder if we can't find it, or we could fetch conversation meta.
+  useEffect(() => {
+     async function fetchConvMeta() {
+        if (!session || !conversationId) return;
+        try {
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
+          const res = await fetch(`${apiUrl}/api/conversations/`, {
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const conv = data.conversations.find((c: { id: number; customerNumber: string }) => String(c.id) === conversationId);
+            if (conv) setCustomerNumber(conv.customerNumber);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+     }
+     fetchConvMeta();
+  }, [conversationId, session]);
+
+  const initials = customerNumber
+    ? customerNumber.replace(/[^0-9]/g, '').slice(-2)
+    : 'C';
 
   const handleReply = (msg: BubbleMessage) => {
     setReplyingTo({ id: msg.id, body: msg.body, senderName: msg.senderName });
@@ -89,17 +124,15 @@ export function ChatPane() {
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
-           // Optimistically add the message or let a sync hook handle it.
-           // For now, let's just re-fetch or append.
-           const newMessage: ChatMessage = {
-             id: String(data.messageId),
-             body,
-             direction: 'outgoing',
-             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-           };
-           setMessages(prev => [...prev, newMessage]);
-           setReplyingTo(null);
-           setTimeout(scrollToBottom, 100);
+            const newMessage: ChatMessage = {
+              id: String(data.messageId),
+              body,
+              direction: 'outgoing',
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+            setMessages(prev => [...prev, newMessage]);
+            setReplyingTo(null);
+            setTimeout(scrollToBottom, 100);
         }
       }
     } catch (err) {
@@ -113,20 +146,23 @@ export function ChatPane() {
       {/* Refined SaaS Header */}
       <header className="h-[64px] shrink-0 bg-white border-b border-[#EDEDED] flex items-center justify-between px-5 z-10 shadow-sm">
         <div className="flex items-center gap-3">
-          <NavLink to="/" className="md:hidden p-2 -ml-2 text-gray-400 hover:text-gray-900 rounded-md">
+          <button 
+            onClick={() => navigate('/')} 
+            className="md:hidden p-2 -ml-2 text-gray-400 hover:text-gray-900 rounded-md"
+          >
             <ArrowLeft className="w-5 h-5" />
-          </NavLink>
+          </button>
           
           <div className="w-9 h-9 rounded bg-[#128C7E] flex items-center justify-center text-white text-[13px] font-bold shadow-sm">
-            A
+            {initials}
           </div>
           <div className="flex flex-col">
             <h2 className="text-[14px] font-bold text-gray-900 leading-none mb-1">
-              {loading ? 'Loading...' : (messages[0]?.senderName || 'Customer')}
+              {loading ? 'Loading...' : (customerNumber || 'Customer')}
             </h2>
             <div className="flex items-center gap-1.5">
               <span className="text-[11px] text-gray-500 font-medium">
-                {loading ? 'Searching history...' : `Conversation ${conversationId}`}
+                {loading ? 'Searching history...' : `Conversation active`}
               </span>
             </div>
           </div>
@@ -134,7 +170,10 @@ export function ChatPane() {
 
         {/* Action Header Toolbar */}
         <div className="flex items-center gap-1.5">
-          <button className="h-8 px-3 text-[12px] font-bold text-gray-700 hover:bg-gray-50 border border-transparent hover:border-gray-200 rounded transition-all">
+          <button 
+            onClick={() => navigate('/')}
+            className="h-8 px-3 text-[12px] font-bold text-gray-700 hover:bg-gray-50 border border-transparent hover:border-gray-200 rounded transition-all"
+          >
             Close
           </button>
           <button className="h-8 px-3 text-[12px] font-bold text-gray-700 hover:bg-gray-50 border border-transparent hover:border-gray-200 rounded transition-all flex items-center gap-1.5">
