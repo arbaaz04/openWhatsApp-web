@@ -72,12 +72,14 @@ export const MetaSignupButton: React.FC = () => {
     };
   }, []);
 
-  // 2. Load the Facebook SDK (runs once on mount)
+  // 2. Load the Facebook SDK using async script tag (runs once on mount)
   useEffect(() => {
+    // If SDK already loaded, skip
     if (window.FB) {
       return;
     }
 
+    // Define fbAsyncInit BEFORE loading the script
     window.fbAsyncInit = function () {
       window.FB.init({
         appId: metaAppId,
@@ -87,13 +89,16 @@ export const MetaSignupButton: React.FC = () => {
       });
     };
 
-    // Load the SDK script
-    const script = document.createElement('script');
-    script.src = 'https://connect.facebook.net/en_US/sdk.js';
-    script.async = true;
-    script.defer = true;
-    script.crossOrigin = 'anonymous';
-    document.body.appendChild(script);
+    // Load the SDK using the async IIFE pattern (as per Meta's official docs)
+    // This ensures the SDK is properly initialized before any calls
+    (function (d: Document, s: string, id: string) {
+      const js = d.createElement(s) as HTMLScriptElement;
+      const fjs = d.getElementsByTagName(s)[0];
+      if (d.getElementById(id)) return;
+      js.id = id;
+      js.src = 'https://connect.facebook.net/en_US/sdk.js';
+      fjs?.parentNode?.insertBefore(js, fjs);
+    })(document, 'script', 'facebook-jssdk');
 
     return () => {
       // Don't remove SDK script on cleanup — it should persist
