@@ -1,4 +1,5 @@
 import { messageRepository } from '../repositories/messageRepository.js';
+import { webhookDeliveryService } from './webhookDeliveryService.js';
 import { logger } from '../utils/logger.js';
 import type { MetaWebhookPayload } from '../types/webhook.types.js';
 import type { WorkerBindings } from '../types/bindings.js';
@@ -11,6 +12,9 @@ import type { WorkerBindings } from '../types/bindings.js';
  * Per-message failures are intentionally logged and skipped to keep processing
  * the rest of the batch. Queue-level failures (outside this function) are
  * handled by the consumer, which can call `message.retry()`.
+ *
+ * After each successful message ingestion, a `conversation.message.received`
+ * event is dispatched to all active user webhooks for the channel (fire-and-forget).
  */
 export const webhookService = {
   async processPayload(
@@ -46,14 +50,14 @@ export const webhookService = {
           logger.info('Processing incoming message', { customerPhone, phoneNumberId });
 
           try {
-            const { messageId } = await messageRepository.processIncomingMessage(
+            const { messageId, conversationId } = await messageRepository.processIncomingMessage(
               phoneNumberId,
               customerPhone,
               bodyText,
               msg.id  // wamid — deduplicates duplicate webhook deliveries from Meta
             );
 
-            // Broadcast to the channel's Durable Object inbox — no cast needed
+            // ── Broadcast to InboxSync Durable Object (real-time UI) ──────────
             if (env?.INBOX_SYNC) {
               const id = env.INBOX_SYNC.idFromName(phoneNumberId);
               const stub = env.INBOX_SYNC.get(id);
@@ -73,6 +77,47 @@ export const webhookService = {
                   }),
                 })
               );
+            }
+
+            // ── Dispatch user webhooks (fire-and-forget) ────────────────────
+            // If DATA_ENCRYPTION_KEY is not available (e.g. test env) we skip.
+            if (env?.DATA_ENCRYPTION_KEY && conversationId) {
+              try {
+                const { db } = await import('../db/index.js');
+                const { conversations } = await import('../db/schema.js');
+                const { eq } = await import('drizzle-orm');
+
+                const [convRow] = await db
+                  .select({ channelId: conversations.channelId })
+                  .from(conversations)
+                  .where(eq(conversations.id, conversationId))
+                  .limit(1);
+
+                if (convRow) {
+                  // We don't await — fire and forget
+                  void webhookDeliveryService.dispatchEvent({
+                    eventName: 'conversation.message.received',
+                    channelId: convRow.channelId,
+                    eventData: {
+                      conversationId,
+                      messageId,
+                      channelId: convRow.channelId,
+                      customerNumber: customerPhone,
+                      body: bodyText,
+                      direction: 'incoming',
+                      wamid: msg.id,
+                      timestamp: new Date().toISOString(),
+                    },
+                    rawMetaPayload: payload,
+                    encryptionKey: env.DATA_ENCRYPTION_KEY,
+                  });
+                }
+              } catch (err: unknown) {
+                logger.warn('Failed to dispatch user webhooks for incoming message', {
+                  conversationId,
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              }
             }
           } catch (e: unknown) {
             const message = e instanceof Error ? e.message : String(e);

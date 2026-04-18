@@ -12,6 +12,28 @@ import {
 } from 'drizzle-orm/pg-core';
 
 // ---------------------------------------------------------------------------
+// Webhook enums — added for user-registered outbound webhook support
+// ---------------------------------------------------------------------------
+
+/**
+ * Payload format for outbound user webhooks.
+ * - `whatflow` — structured, event-based envelope with HMAC signature
+ * - `meta`     — raw Meta payload forwarding with idempotency key
+ */
+export const webhookKindEnum = pgEnum('webhook_kind', ['whatflow', 'meta']);
+
+/**
+ * Subscribable event types for `whatflow`-kind webhooks.
+ * `meta`-kind webhooks receive all events, no filtering.
+ */
+export const webhookEventEnum = pgEnum('webhook_event', [
+  'conversation.message.received',
+  'conversation.message.sent',
+  'conversation.window.opened',
+  'conversation.window.closed',
+]);
+
+// ---------------------------------------------------------------------------
 // Enums — enforce valid values at the database level.
 // ---------------------------------------------------------------------------
 
@@ -194,5 +216,63 @@ export const messages = pgTable(
       t.conversationId,
       t.createdAt
     ),
+  })
+);
+
+// ---------------------------------------------------------------------------
+// User webhook registrations
+// ---------------------------------------------------------------------------
+
+/**
+ * User-registered outbound webhook endpoints.
+ *
+ * When an event occurs (message received, sent, etc.) WhatFlow dispatches
+ * an HTTP POST to each active endpoint registered for the relevant channel.
+ *
+ * Two kinds are available:
+ *   - `whatflow` — structured event envelope, HMAC-signed, event-filtered
+ *   - `meta`     — raw Meta payload forwarded verbatim; one per channel
+ *
+ * `encryptedSecret` stores the HMAC signing secret AES-256-GCM encrypted
+ * with `DATA_ENCRYPTION_KEY` — identical scheme to channel access tokens.
+ *
+ * `channelId` is nullable to support future project-level webhooks that
+ * span all channels owned by a team.
+ */
+export const userWebhooks = pgTable(
+  'user_webhooks',
+  {
+    id: serial('id').primaryKey(),
+    teamId: integer('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    /** Null = project-level webhook; non-null = scoped to a single channel */
+    channelId: integer('channel_id').references(() => channels.id, { onDelete: 'cascade' }),
+    kind: webhookKindEnum('kind').notNull().default('whatflow'),
+    /** Validated HTTPS endpoint URL */
+    url: text('url').notNull(),
+    /**
+     * AES-256-GCM encrypted signing secret.
+     * Decrypted on the fly during delivery — never returned in plaintext via API.
+     */
+    encryptedSecret: text('encrypted_secret').notNull(),
+    /**
+     * Subscribed events for `whatflow`-kind webhooks.
+     * Stored as a comma-separated string of webhook_event enum values.
+     * For `meta`-kind webhooks this column is ignored.
+     */
+    events: text('events').notNull().default(''),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    // Fast lookup by team — the primary access pattern for list endpoints
+    teamIdx: index('user_webhooks_team_id_idx').on(t.teamId),
+    // Fast lookup by channel — used at dispatch time to find active endpoints
+    channelIdx: index('user_webhooks_channel_id_idx').on(t.channelId),
+    // One meta webhook per channel — enforced at the service layer since
+    // the nullable channelId makes a standard UNIQUE index impractical.
+    // A partial unique index would work for non-null values but is DB-specific.
   })
 );
