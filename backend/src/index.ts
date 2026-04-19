@@ -48,20 +48,19 @@ const app = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>(
 // Middleware — executes in order for every request
 // ---------------------------------------------------------------------------
 
-// 1. Assign a unique correlation ID before anything else runs
+// 1. CORS — prioritize this as #1 so even early errors get correct headers
+app.use('*', cors);
+
+// 2. Assign a unique correlation ID
 app.use('*', async (c, next) => {
   c.set('requestId', crypto.randomUUID());
   await next();
 });
 
-// 2. Security headers — applied before route handlers so they're always present
+// 3. Security headers
 app.use('*', securityHeaders);
 
-// 3. CORS — reject disallowed origins early, before any business logic
-app.use('*', cors);
-
-// 4. Validate all required env bindings — fail fast with 503 rather than
-//    a confusing 500 deep inside a service call
+// 4. Validate all required env bindings
 app.use('*', async (c, next) => {
   validateEnv(c.env);
   await next();

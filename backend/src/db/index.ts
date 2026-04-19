@@ -14,17 +14,20 @@ import * as schema from './schema.js';
 // Factory — pure function, no side effects at module load time.
 // ---------------------------------------------------------------------------
 
+let _client: ReturnType<typeof postgres> | null = null;
+let _db: DrizzleDb | null = null;
+
 /**
- * Creates a configured Drizzle ORM instance backed by postgres-js.
+ * Creates or retrieves a cached Drizzle ORM instance backed by postgres-js.
  *
  * In production the `connectionString` comes from `c.env.HYPERDRIVE.connectionString`
  * — Cloudflare Hyperdrive pools and caches connections at the edge for low latency.
  *
- * For drizzle-kit migrations (run outside the Worker), set `DATABASE_URL` in your
- * environment and pass `process.env.DATABASE_URL` directly to this function.
+ * We cache the Postgres client and Drizzle instance globally in the isolate
+ * to prevent connection leaks across request reuses.
  *
  * @param connectionString - A valid PostgreSQL connection string
- * @returns A ready-to-query Drizzle instance scoped to this request
+ * @returns A ready-to-query Drizzle instance
  */
 export function createDb(connectionString: string): DrizzleDb {
   if (!connectionString) {
@@ -35,30 +38,26 @@ export function createDb(connectionString: string): DrizzleDb {
     );
   }
 
+  // If already initialised for this isolate, return the cached instance
+  if (_db) return _db;
+
   const isHyperdriveConnection = connectionString.includes('hyperdrive.local');
-  const client = postgres(connectionString, {
+  _client = postgres(connectionString, {
     ssl: isHyperdriveConnection ? false : 'require',
-    // One logical connection per Worker invocation — Hyperdrive handles pooling
-    // at the edge, so we don't need more than one per isolate.
+    // One logical connection per Worker isolate — Hyperdrive handles pooling
+    // at the edge. We reuse this client across multiple requests in the same isolate.
     max: 1,
     idle_timeout: 20,
     connect_timeout: 30,
-    // Disable prepare — required for Supabase Transaction mode pooler (pgBouncer/Supavisor)
-    // which does not support extended query protocol over the same connection.
     prepare: false,
   });
 
-  return drizzle(client, { schema });
+  _db = drizzle(_client, { schema });
+  return _db;
 }
-
-// ---------------------------------------------------------------------------
-// Module-level singleton with explicit lifecycle management.
-// ---------------------------------------------------------------------------
-let _db: DrizzleDb | null = null;
 
 /**
  * Injects the shared database instance for the current request.
- * Called once per request in the index.ts middleware chain.
  * Idempotent — safe to call on every Worker request.
  */
 export function setDb(instance: DrizzleDb): void {
