@@ -165,7 +165,11 @@ jobs:
         working-directory: ./backend
         env:
           DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
-        run: npm run db:migrate
+        run: |
+          # Diagnostic: Check connection first
+          node -e "const pg = require('postgres'); const sql = pg(process.env.DATABASE_URL); sql\`SELECT 1\`.then(() => { console.log('Connection successful'); process.exit(0); }).catch(e => { console.error('Connection failed:', e.message); process.exit(1); })"
+          # Run actual migration
+          npm run db:migrate
 
       - name: Sync Runtime Config to Cloudflare (Production)
         working-directory: ./backend

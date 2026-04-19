@@ -64,10 +64,9 @@ ALTER TABLE "user_webhooks" ALTER COLUMN "kind" SET DATA TYPE "public"."webhook_
 );
 
 -- Step 5c: Clean up the old type and rename the new one
--- Note: We only do this if the old type still exists and is named 'webhook_kind'
 DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'webhook_kind') AND EXISTS (SELECT 1 FROM pg_type WHERE typname = 'webhook_kind_new') THEN
-        DROP TYPE "public"."webhook_kind";
+        DROP TYPE "public"."webhook_kind" CASCADE;
         ALTER TYPE "public"."webhook_kind_new" RENAME TO "webhook_kind";
     END IF;
 END $$;
