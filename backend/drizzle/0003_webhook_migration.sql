@@ -39,6 +39,7 @@ DO $$ BEGIN
     END IF;
     
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='channels' AND column_name='status' AND data_type='character varying') THEN
+        ALTER TABLE "channels" ALTER COLUMN "status" DROP DEFAULT;
         ALTER TABLE "channels" ALTER COLUMN "status" SET DATA TYPE "public"."channel_status" USING "status"::"public"."channel_status";
         ALTER TABLE "channels" ALTER COLUMN "status" SET DEFAULT 'active'::"public"."channel_status";
         ALTER TABLE "channels" ALTER COLUMN "status" SET NOT NULL;
