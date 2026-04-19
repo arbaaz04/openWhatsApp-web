@@ -44,11 +44,13 @@ export function createDb(connectionString: string): DrizzleDb {
   const isHyperdriveConnection = connectionString.includes('hyperdrive.local');
   _client = postgres(connectionString, {
     ssl: isHyperdriveConnection ? false : 'require',
-    // One logical connection per Worker isolate — Hyperdrive handles pooling
-    // at the edge. We reuse this client across multiple requests in the same isolate.
-    max: 1,
+    // Increase to 5 connections per isolate to allow concurrent queries
+    // without queuing delays, while still staying within Cloudflare/Hyperdrive limits.
+    max: 5,
+    // Idle timeout: connections close after 20s of inactivity to save resources.
     idle_timeout: 20,
-    connect_timeout: 30,
+    // Connect timeout: fail fast (5s) instead of hanging the isolate if DB is unreachable.
+    connect_timeout: 5,
     prepare: false,
   });
 

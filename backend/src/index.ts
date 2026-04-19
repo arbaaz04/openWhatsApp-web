@@ -4,6 +4,7 @@ import { ApiError, formatErrorResponse } from './utils/errors.js';
 import { createDb, setDb } from './db/index.js';
 import { validateEnv } from './utils/validateEnv.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
+import { timeout } from './middleware/timeout.js';
 import { cors } from './middleware/cors.js';
 import { swaggerUI } from '@hono/swagger-ui';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
@@ -51,16 +52,19 @@ const app = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>(
 // 1. CORS — prioritize this as #1 so even early errors get correct headers
 app.use('*', cors);
 
-// 2. Assign a unique correlation ID
+// 2. Timeout — catch hangs before the runtime kills the isolate
+app.use('*', timeout(20000));
+
+// 3. Assign a unique correlation ID
 app.use('*', async (c, next) => {
   c.set('requestId', crypto.randomUUID());
   await next();
 });
 
-// 3. Security headers
+// 4. Security headers
 app.use('*', securityHeaders);
 
-// 4. Validate all required env bindings
+// 5. Validate all required env bindings
 app.use('*', async (c, next) => {
   validateEnv(c.env);
   await next();
@@ -201,6 +205,9 @@ app.get('/health/ready', (c) => {
     200
   );
 });
+
+/** Minimal health check — does NOT touch the database. Used to debug worker hangs. */
+app.get('/api/health/minimal', (c) => c.json({ status: 'ok', db: 'skipped' }, 200));
 
 app.get('/', (c) => c.json({ success: true, message: 'Whatflow API Online' }));
 

@@ -17,6 +17,7 @@
 
 import type { Context, Next } from 'hono';
 import { ApiError } from '../utils/errors.js';
+import { logger } from '../utils/logger.js';
 import type { AppEnv } from '../types/honoContext.js';
 
 // ---------------------------------------------------------------------------
@@ -339,11 +340,24 @@ export async function requireAuth(
 
   const token = authHeader.slice('Bearer '.length);
   const jwtSecret = c.env.SUPABASE_JWT_SECRET;
+  const requestId = c.get('requestId');
 
-  const payload = await verifySupabaseJwt(token, jwtSecret, c.env.SUPABASE_URL);
+  logger.info('Authenticating request', { requestId, hasToken: !!token });
 
-  c.set('userId', payload.sub);
-  c.set('userEmail', payload.email ?? '');
+  try {
+    const payload = await verifySupabaseJwt(token, jwtSecret, c.env.SUPABASE_URL);
+    
+    logger.info('Authentication successful', { requestId, userId: payload.sub });
+    
+    c.set('userId', payload.sub);
+    c.set('userEmail', payload.email ?? '');
 
-  await next();
+    await next();
+  } catch (err) {
+    logger.error('Authentication failed', { 
+      requestId, 
+      error: err instanceof Error ? err.message : String(err) 
+    });
+    throw err;
+  }
 }
