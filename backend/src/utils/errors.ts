@@ -35,24 +35,29 @@ export class ApiError extends Error {
  * @param {unknown} err - The error object to format
  * @returns {Record<string, unknown>} Structured error response payload
  */
-export function formatErrorResponse(err: unknown): Record<string, unknown> {
-  if (err instanceof ApiError) {
-    return {
-      success: false,
-      error: {
-        code: err.code,
-        message: err.message,
-        details: err.details,
-      },
-    };
-  }
-
+export function formatErrorResponse(err: unknown, isProduction: boolean = false): Record<string, unknown> {
   const error = err as Error;
-  return {
+  const baseResponse: any = {
     success: false,
     error: {
       code: 'UNKNOWN_ERROR',
       message: error.message || 'An unexpected error occurred',
     },
   };
+
+  if (err instanceof ApiError) {
+    baseResponse.error.code = err.code;
+    baseResponse.error.details = err.details;
+  }
+
+  // Include detailed debug info in non-production environments to aid troubleshooting
+  if (!isProduction) {
+    baseResponse.error.debug = {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    };
+  }
+
+  return baseResponse;
 }

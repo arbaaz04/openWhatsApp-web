@@ -131,15 +131,17 @@ app.onError((err, c) => {
     stack: err.stack,
   });
   const statusCode = err instanceof ApiError ? err.statusCode : 500;
-  return c.json(formatErrorResponse(err), statusCode as ContentfulStatusCode);
+  const isProd = c.env.ENVIRONMENT === 'production';
+  return c.json(formatErrorResponse(err, isProd), statusCode as ContentfulStatusCode);
 });
 
-app.notFound((c) =>
-  c.json(
-    formatErrorResponse(new ApiError(404, 'Endpoint not found', 'NOT_FOUND')),
+app.notFound((c) => {
+  const isProd = c.env.ENVIRONMENT === 'production';
+  return c.json(
+    formatErrorResponse(new ApiError(404, 'Endpoint not found', 'NOT_FOUND'), isProd),
     404 as ContentfulStatusCode
-  )
-);
+  );
+});
 
 // ---------------------------------------------------------------------------
 // Routes

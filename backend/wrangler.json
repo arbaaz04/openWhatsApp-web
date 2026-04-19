@@ -3,6 +3,21 @@
   "main": "src/index.ts",
   "compatibility_date": "2024-04-10",
   "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "persist": true,
+      "invocation_logs": true
+    },
+    "traces": {
+      "enabled": true,
+      "persist": true,
+      "head_sampling_rate": 1
+    }
+  },
   "account_id": "4f1f004b2eace5ca5b30dec4a2b9c90d",
   "vars": {
     "ALLOWED_ORIGIN": "http://localhost:5173",
@@ -21,6 +36,21 @@
       "routes": [
         { "pattern": "PROD_BACKEND_HOST", "custom_domain": true }
       ],
+      "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "persist": true,
+          "invocation_logs": true
+        },
+        "traces": {
+          "enabled": true,
+          "persist": true,
+          "head_sampling_rate": 1
+        }
+      },
       "queues": {
         "producers": [
           {
@@ -87,6 +117,21 @@
       "routes": [
         { "pattern": "DEV_BACKEND_HOST", "custom_domain": true }
       ],
+      "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "persist": true,
+          "invocation_logs": true
+        },
+        "traces": {
+          "enabled": true,
+          "persist": true,
+          "head_sampling_rate": 1
+        }
+      },
       "queues": {
         "producers": [
           {

@@ -10,6 +10,7 @@
  */
 
 import type { Context, Next } from 'hono';
+import { logger } from '../utils/logger.js';
 import type { WorkerBindings } from '../types/bindings.js';
 
 /** Headers returned on every CORS response (including preflight). */
@@ -44,31 +45,33 @@ export async function cors(
   }
 
   const allowed = c.env.ALLOWED_ORIGIN;
-  const allowWildcard = allowed === '*' && c.env.ENVIRONMENT === 'development';
+  const isWildcard = allowed === '*';
+  const isMatch = origin === allowed;
 
-  if (!allowWildcard && origin !== allowed) {
-    c.res = new Response('Forbidden — origin not allowed', { status: 403 });
-    return;
+  // Helper to append mandatory CORS headers to any response
+  const addCorsHeaders = (res: Response) => {
+    res.headers.set('Access-Control-Allow-Origin', isWildcard ? origin : allowed);
+    Object.entries(CORS_HEADERS).forEach(([k, v]) => res.headers.set(k, v));
+    return res;
+  };
+
+  if (!isWildcard && !isMatch) {
+    logger.warn('CORS request rejected', { origin, allowed });
+    c.res = addCorsHeaders(new Response('Forbidden — origin not allowed', { status: 403 }));
+    return c.res;
   }
 
   // Handle preflight
   if (c.req.method === 'OPTIONS') {
-    c.res = new Response(null, {
-      status: 204,
-      headers: {
-        'Access-Control-Allow-Origin': allowWildcard ? '*' : origin,
-        ...CORS_HEADERS,
-      },
-    });
-    return;
+    c.res = addCorsHeaders(new Response(null, { status: 204 }));
+    return c.res;
   }
 
   try {
     await next();
   } finally {
     if (c.res) {
-      c.res.headers.set('Access-Control-Allow-Origin', allowWildcard ? '*' : origin);
-      Object.entries(CORS_HEADERS).forEach(([k, v]) => c.res.headers.set(k, v));
+      addCorsHeaders(c.res);
     }
   }
 }
