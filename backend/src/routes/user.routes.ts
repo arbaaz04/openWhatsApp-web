@@ -48,21 +48,10 @@ const meRoute = createRoute({
 });
 
 userRouter.use('/me', requireAuth);
-userRouter.openapi(meRoute, async (c) => {
+  userRouter.openapi(meRoute, async (c) => {
   const log = createLogger({ requestId: c.get('requestId') });
   const userId = c.get('userId');
   const userEmail = c.get('userEmail');
-
-  const fallbackProfile = {
-    success: true,
-    user: {
-      id: userId,
-      email: userEmail,
-      name: null,
-      avatarUrl: null,
-    },
-    teams: [] as Array<{ teamId: number; name: string; role: string }>,
-  };
 
   try {
     const { name, avatarUrl } = c.req.valid('query');

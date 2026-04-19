@@ -41,7 +41,6 @@ export function createDb(connectionString: string): DrizzleDb {
   // If already initialised for this isolate, return the cached instance
   if (_db) return _db;
 
-  const isHyperdriveConnection = connectionString.includes('hyperdrive.local');
   _client = postgres(connectionString, {
     // Disable SSL for the internal connection to Hyperdrive.
     // Hyperdrive itself handles the secure upstream connection to the database.
@@ -89,12 +88,14 @@ export const db: DrizzleDb = new Proxy({} as DrizzleDb, {
     if (typeof value === 'function') {
       return (...args: any[]) => {
         try {
-          return (value as Function).apply(instance, args);
+          return (value as (...args: any[]) => any).apply(instance, args);
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : String(err);
           // Detect 'Failed query' and add context if possible
           if (errorMessage.includes('Failed query')) {
-            throw new Error(`[Database Error] ${errorMessage}. Check Hyperdrive connection and SSL settings.`);
+            throw new Error(
+              `[Database Error] ${errorMessage}. Check Hyperdrive connection and SSL settings.`
+            );
           }
           throw err;
         }
