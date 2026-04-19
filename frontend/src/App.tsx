@@ -7,6 +7,7 @@ import { PhoneNumbers } from './components/phones/PhoneNumbers';
 import { ApiKeys } from './components/api/ApiKeys';
 import { Flows } from './components/flows/Flows';
 import { Templates } from './components/templates/Templates';
+import { Webhooks } from './components/webhooks/Webhooks';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Auth } from './pages/Auth';
 import { MetaCallback } from './pages/MetaCallback';
@@ -91,9 +92,9 @@ function App() {
             <Route path="/search" element={<ComingSoon title="Search Module" />} />
             <Route path="/add-number" element={<PhoneNumbers />} />
             <Route path="/integrate" element={<ComingSoon title="Integration Hub" />} />
+            <Route path="/webhooks" element={<Webhooks />} />
             <Route path="/workflows" element={<ComingSoon title="Workflows Engine" />} />
             <Route path="/functions" element={<ComingSoon title="Cloud Functions" />} />
-            <Route path="/broadcasts" element={<ComingSoon title="Message Broadcasts" />} />
             <Route path="/team" element={<ComingSoon title="Team Management" />} />
             <Route path="/billing" element={<ComingSoon title="Billing & Plans" />} />
             <Route path="/help" element={<ComingSoon title="Help & Documentation" />} />
