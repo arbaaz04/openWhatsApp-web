@@ -3,7 +3,7 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { createLogger } from '../utils/logger.js';
 import { db } from '../db/index.js';
 import { messages, conversations, channels, teamMembers } from '../db/schema.js';
-import { eq, and, desc, sql, count } from 'drizzle-orm';
+import { eq, desc, sql } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
 
 type Variables = { requestId: string; userId: string; userEmail: string; teamId: string };
