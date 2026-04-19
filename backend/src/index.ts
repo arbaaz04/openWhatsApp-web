@@ -32,7 +32,17 @@ type Variables = {
   teamId: string;
 };
 
-const app = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>();
+const app = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>({
+  defaultHook: (result, c) => {
+    if (!result.success) {
+      return c.json(
+        formatErrorResponse(new ApiError(400, 'Validation failed', 'VALIDATION_ERROR'), false),
+        400
+      );
+    }
+  },
+  strict: false,
+});
 
 // ---------------------------------------------------------------------------
 // Middleware — executes in order for every request

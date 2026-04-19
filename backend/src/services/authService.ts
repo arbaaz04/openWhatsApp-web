@@ -254,16 +254,22 @@ export const authService = {
 
         logger.info('Channel credentials rotated', { wabaId: finalWabaId, phoneNumberId: finalPhoneNumberId });
       } else {
-        await db.insert(channels).values({
+        const channelData = {
           teamId,
-          type: 'business_app',
+          type: 'business_app' as const,
           wabaId: finalWabaId,
           whatsappId: finalPhoneNumberId,
           phoneNumber,
           accessToken: encryptedToken,
-        });
+        };
+        
+        await db.insert(channels).values(channelData);
 
-        logger.info('Channel onboarded', { wabaId: finalWabaId, phoneNumberId: finalPhoneNumberId, phoneNumber });
+        logger.info('Channel onboarded successfully', { 
+          id: finalPhoneNumberId, 
+          number: phoneNumber, 
+          teamId 
+        });
       }
 
       return { success: true };

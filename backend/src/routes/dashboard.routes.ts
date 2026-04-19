@@ -49,6 +49,7 @@ dashboardRouter.openapi(statsRoute, async (c) => {
   // We'll simplify for now: assume user wants stats for ALL their teams.
   
   // 1. Count phone numbers (channels)
+  log.info('Fetching numbersCount...');
   const [numbers] = await db
     .select({ count: count() })
     .from(channels)
@@ -56,6 +57,7 @@ dashboardRouter.openapi(statsRoute, async (c) => {
     .where(eq(teamMembers.userId, userId));
 
   // 2. Count conversations
+  log.info('Fetching conversationsCount...');
   const [convs] = await db
     .select({ count: count() })
     .from(conversations)
@@ -64,6 +66,7 @@ dashboardRouter.openapi(statsRoute, async (c) => {
     .where(eq(teamMembers.userId, userId));
 
   // 3. Count active conversations (window open)
+  log.info('Fetching activeConversationsCount...');
   const [activeConvs] = await db
     .select({ count: count() })
     .from(conversations)
@@ -72,11 +75,12 @@ dashboardRouter.openapi(statsRoute, async (c) => {
     .where(and(eq(teamMembers.userId, userId), eq(conversations.isWindowOpen, true)));
 
   // 4. Count messages (total, inbound, outbound)
+  log.info('Fetching messageStats...');
   const messageStats = await db
     .select({
       total: count(),
-      inbound: sql<number>`count(case when ${messages.direction} = 'incoming' then 1 end)`,
-      outbound: sql<number>`count(case when ${messages.direction} = 'outgoing' then 1 end)`,
+      inbound: sql<number>`cast(count(case when ${messages.direction} = 'incoming' then 1 end) as integer)`,
+      outbound: sql<number>`cast(count(case when ${messages.direction} = 'outgoing' then 1 end) as integer)`,
     })
     .from(messages)
     .innerJoin(conversations, eq(conversations.id, messages.conversationId))
