@@ -43,13 +43,11 @@ export function createDb(connectionString: string): DrizzleDb {
 
   const isHyperdriveConnection = connectionString.includes('hyperdrive.local');
   _client = postgres(connectionString, {
-    ssl: isHyperdriveConnection ? false : 'require',
-    // Increase to 5 connections per isolate to allow concurrent queries
-    // without queuing delays, while still staying within Cloudflare/Hyperdrive limits.
+    // Disable SSL for the internal connection to Hyperdrive.
+    // Hyperdrive itself handles the secure upstream connection to the database.
+    ssl: false,
     max: 5,
-    // Idle timeout: connections close after 20s of inactivity to save resources.
     idle_timeout: 20,
-    // Connect timeout: fail fast (5s) instead of hanging the isolate if DB is unreachable.
     connect_timeout: 5,
     prepare: false,
   });
@@ -81,10 +79,27 @@ export function getDb(): DrizzleDb {
 
 /**
  * Lazy proxy — resolves to the active DB instance at call-time, not at import-time.
- * Used by repositories so module import order does not matter.
+ * Includes a global error wrapper to surface more detail during failures.
  */
 export const db: DrizzleDb = new Proxy({} as DrizzleDb, {
   get(_target, prop) {
-    return getDb()[prop as keyof DrizzleDb];
+    const instance = getDb();
+    const value = instance[prop as keyof DrizzleDb];
+
+    if (typeof value === 'function') {
+      return (...args: any[]) => {
+        try {
+          return (value as Function).apply(instance, args);
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          // Detect 'Failed query' and add context if possible
+          if (errorMessage.includes('Failed query')) {
+            throw new Error(`[Database Error] ${errorMessage}. Check Hyperdrive connection and SSL settings.`);
+          }
+          throw err;
+        }
+      };
+    }
+    return value;
   },
 });

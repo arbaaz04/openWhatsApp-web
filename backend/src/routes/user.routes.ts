@@ -66,8 +66,11 @@ userRouter.openapi(meRoute, async (c) => {
 
   try {
     const { name, avatarUrl } = c.req.valid('query');
+    const startSync = Date.now();
 
     // Upsert user record — creates on first call, updates metadata if provided
+    log.info('Syncing user profile to DB...', { userId, email: userEmail });
+    
     await db
       .insert(users)
       .values({
@@ -83,12 +86,39 @@ userRouter.openapi(meRoute, async (c) => {
           avatarUrl: avatarUrl ?? undefined,
         },
       });
+      
+    log.info('User profile upserted successfully', { durationMs: Date.now() - startSync });
 
-    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    // Ensure the user has a default team membership
+    const startTeam = Date.now();
+    const [membership] = await db
+      .select({
+        teamId: teamMembers.teamId,
+      })
+      .from(teamMembers)
+      .where(eq(teamMembers.userId, userId))
+      .limit(1);
 
-    if (!user) {
-      log.warn('User record missing after upsert; returning fallback profile', { userId });
-      return c.json(fallbackProfile, 200);
+    if (!membership) {
+      log.info('Creating default team for user...', { userId });
+      
+      const [newTeam] = await db
+        .insert(teams)
+        .values({
+          name: `${name ?? 'My'}'s Team`,
+          ownerUserId: userId,
+        })
+        .returning();
+
+      await db.insert(teamMembers).values({
+        userId,
+        teamId: newTeam.id,
+        role: 'admin',
+      });
+      
+      log.info('Default team created', { teamId: newTeam.id, durationMs: Date.now() - startTeam });
+    } else {
+      log.info('User has existing team membership', { teamId: membership.teamId });
     }
 
     const memberships = await db
@@ -101,17 +131,10 @@ userRouter.openapi(meRoute, async (c) => {
       .innerJoin(teams, eq(teams.id, teamMembers.teamId))
       .where(eq(teamMembers.userId, userId));
 
-    log.info('User profile resolved', { userId, teamCount: memberships.length });
-
     return c.json(
       {
         success: true,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name ?? null,
-          avatarUrl: user.avatarUrl ?? null,
-        },
+        user: { id: userId, email: userEmail, name: name ?? null, avatarUrl: avatarUrl ?? null },
         teams: memberships.map((m) => ({
           teamId: m.teamId ?? 0,
           name: m.name,
@@ -121,12 +144,19 @@ userRouter.openapi(meRoute, async (c) => {
       200
     );
   } catch (err) {
-    log.error('User profile sync failed; returning fallback profile', {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    log.error('User profile sync failed', {
       userId,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage,
+      stack: err instanceof Error ? err.stack : undefined,
     });
-
-    return c.json(fallbackProfile, 200);
+    
+    // Fallback profile ensures the frontend doesn't crash on DB hiccups
+    return c.json({
+      success: true,
+      user: { id: userId, email: userEmail, name: null, avatarUrl: null, isFallback: true },
+      teams: [],
+    }, 200);
   }
 });
 
