@@ -87,22 +87,6 @@ jobs:
       - run: npx vitest run --reporter=verbose --coverage
 
   deploy:
-    runs-on: ubuntu-24.04
-    needs: [backend-lint, backend-audit, test]
-    environment: production
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check for DB changes
-        id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            db:
-              - 'backend/src/db/**'
-              - 'backend/drizzle/**'
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -152,8 +136,8 @@ jobs:
             fi
           done
 
-          if [ "${{ steps.filter.outputs.db }}" == "true" ] && [ -z "${DIRECT_DATABASE_URL:-}" ]; then
-            echo "Changes detected in DB files but DIRECT_DATABASE_URL secret is missing."
+          if [ -z "${DIRECT_DATABASE_URL:-}" ]; then
+            echo "DIRECT_DATABASE_URL secret is missing."
             echo "Please add DIRECT_DATABASE_URL to GitHub Secrets to enable migrations."
             exit 1
           fi
@@ -161,7 +145,6 @@ jobs:
           npx wrangler whoami >/dev/null
 
       - name: Apply Database migrations (Production)
-        if: steps.filter.outputs.db == 'true'
         working-directory: ./backend
         env:
           DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
