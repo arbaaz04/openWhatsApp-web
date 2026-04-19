@@ -87,6 +87,14 @@ jobs:
       - run: npx vitest run --reporter=verbose --coverage
 
   deploy:
+    name: Deploy Backend (Production)
+    runs-on: ubuntu-24.04
+    needs: [backend-lint, backend-audit, test]
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
