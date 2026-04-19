@@ -46,6 +46,7 @@ export async function cors(
 
   const allowed = c.env.ALLOWED_ORIGIN;
   const isWildcard = allowed === '*';
+  const isStaging = c.env.ENVIRONMENT !== 'production';
   
   // Use a more robust matching logic that ignores protocol differences if necessary,
   // but strictly handles the wildcard case first.
@@ -56,14 +57,23 @@ export async function cors(
     isMatch = strippedOrigin === strippedAllowed;
   }
 
+  // Automatic bypass for staging/dev: trust any .whatflow.io origin
+  const isInternalMatch = isStaging && origin?.endsWith('.whatflow.io');
+
   // Helper to append mandatory CORS headers to any response
   const addCorsHeaders = (res: Response) => {
-    res.headers.set('Access-Control-Allow-Origin', isWildcard ? origin : allowed);
+    res.headers.set('Access-Control-Allow-Origin', (isWildcard || isInternalMatch) ? origin : allowed);
     Object.entries(CORS_HEADERS).forEach(([k, v]) => res.headers.set(k, v));
+    
+    // Debug headers to surface configuration mismatches in the browser
+    res.headers.set('X-Whatflow-Debug-Allowed', allowed ?? 'MISSING');
+    res.headers.set('X-Whatflow-Debug-Origin', origin ?? 'MISSING');
+    res.headers.set('X-Whatflow-Debug-Match', String(isMatch || isInternalMatch));
+    
     return res;
   };
 
-  if (!isWildcard && !isMatch) {
+  if (!isWildcard && !isMatch && !isInternalMatch) {
     logger.warn('CORS request rejected', { origin, allowed });
     c.res = addCorsHeaders(new Response('Forbidden — origin not allowed', { status: 403 }));
     return c.res;

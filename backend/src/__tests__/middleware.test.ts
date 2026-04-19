@@ -50,7 +50,7 @@ describe('securityHeaders middleware', () => {
   it('sets Content-Security-Policy', async () => {
     const c = makeContext();
     await securityHeaders(c as never, vi.fn().mockResolvedValue(undefined));
-    expect(c.res.headers.get('Content-Security-Policy')).toContain("default-src 'none'");
+    expect(c.res.headers.get('Content-Security-Policy')).toContain("default-src 'self'");
   });
 
   it('calls next() exactly once', async () => {

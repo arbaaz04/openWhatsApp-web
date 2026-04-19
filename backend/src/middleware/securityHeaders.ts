@@ -29,7 +29,7 @@ export async function securityHeaders(c: Context, next: Next): Promise<void> {
   c.res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   c.res.headers.set(
     'Content-Security-Policy',
-    "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+    "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
   );
   c.res.headers.set(
     'Permissions-Policy',
