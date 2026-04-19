@@ -45,7 +45,7 @@ export function createDb(connectionString: string): DrizzleDb {
     // Disable SSL for the internal connection to Hyperdrive.
     // Hyperdrive itself handles the secure upstream connection to the database.
     ssl: false,
-    max: 5,
+    max: 1,
     idle_timeout: 20,
     connect_timeout: 5,
     prepare: false,
