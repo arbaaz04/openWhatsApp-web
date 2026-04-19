@@ -15,13 +15,23 @@ type WebhookEvent =
   | 'conversation.message.received'
   | 'conversation.message.sent'
   | 'conversation.window.opened'
-  | 'conversation.window.closed';
+  | 'conversation.window.closed'
+  | 'conversation.started'
+  | 'conversation.inactive'
+  | 'conversation.ended'
+  | 'message.delivered'
+  | 'message.read'
+  | 'message.failed';
 
 const ALL_EVENTS: { value: WebhookEvent; label: string; description: string }[] = [
-  { value: 'conversation.message.received', label: 'Message Received', description: 'Fired when a new inbound message arrives' },
-  { value: 'conversation.message.sent', label: 'Message Sent', description: 'Fired when an outbound message is sent' },
-  { value: 'conversation.window.opened', label: 'Window Opened', description: 'Fired when the 24-hour messaging window opens' },
-  { value: 'conversation.window.closed', label: 'Window Closed', description: 'Fired when the 24-hour messaging window closes' },
+  { value: 'conversation.message.received', label: 'Message received', description: 'When a new message arrives' },
+  { value: 'conversation.message.sent', label: 'Message sent', description: 'When a message is sent to WhatsApp' },
+  { value: 'conversation.started', label: 'Conversation started', description: 'When a new conversation begins' },
+  { value: 'conversation.inactive', label: 'Conversation inactive', description: 'When no messages have been sent for your configured window' },
+  { value: 'conversation.ended', label: 'Conversation ended', description: 'When a conversation ends (agent, manual, or 24-hour inactivity)' },
+  { value: 'message.delivered', label: 'Message delivered', description: 'When your message is delivered' },
+  { value: 'message.read', label: 'Message read', description: 'When your message is read' },
+  { value: 'message.failed', label: 'Message failed', description: 'When message delivery fails' },
 ];
 
 interface Webhook {
@@ -159,7 +169,6 @@ export function Webhooks() {
             authFetch={authFetch}
             onCreated={(webhook) => {
               setWebhooks((prev) => [webhook, ...prev]);
-              setShowCreateForm(false);
             }}
             onCancel={() => setShowCreateForm(false)}
           />
@@ -434,9 +443,11 @@ function WebhookCard({ webhook, teamId, authFetch, onDelete, onToggle, onUpdate 
             <div className="font-mono text-[12px] bg-white border border-[#EDEDED] rounded-lg px-3 py-2 text-gray-600 tracking-wider">
               {showSecret && newSecret ? newSecret : visibleSecret}
             </div>
-            {!newSecret && (
-              <p className="text-[11px] text-gray-400">The plaintext secret was shown once at creation. Rotate to generate a new one.</p>
-            )}
+            {!newSecret ? (
+              <p className="text-[11px] text-gray-400">For security, existing secrets are hidden. Create a new one by rotating.</p>
+            ) : !showSecret ? (
+              <p className="text-[11px] text-amber-600 font-medium italic">Click "Show" to reveal the new secret.</p>
+            ) : null}
           </div>
 
           {/* Events section */}
@@ -445,14 +456,14 @@ function WebhookCard({ webhook, teamId, authFetch, onDelete, onToggle, onUpdate 
               <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
                 <Zap className="w-3 h-3" /> Subscribed Events
               </p>
-              {!editingEvents ? (
+              {!editingEvents && webhook.kind === 'whatflow-web' ? (
                 <button
                   onClick={() => { setEditingEvents(true); setSelectedEvents(webhook.events as WebhookEvent[]); }}
                   className="h-6 px-2 text-[11px] text-gray-400 hover:text-gray-700 border border-[#EDEDED] rounded-md bg-white transition-colors"
                 >
                   Edit
                 </button>
-              ) : (
+              ) : editingEvents && webhook.kind === 'whatflow-web' ? (
                 <div className="flex items-center gap-2">
                   <button onClick={() => setEditingEvents(false)} className="h-6 px-2 text-[11px] text-gray-400 hover:text-gray-700 border border-[#EDEDED] rounded-md bg-white transition-colors">
                     Cancel
@@ -465,52 +476,56 @@ function WebhookCard({ webhook, teamId, authFetch, onDelete, onToggle, onUpdate 
                     {savingEvents ? 'Saving...' : 'Save'}
                   </button>
                 </div>
-              )}
+              ) : null}
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              {ALL_EVENTS.map((event) => {
-                const isActive = editingEvents
-                  ? selectedEvents.includes(event.value)
-                  : webhook.events.includes(event.value);
+            {webhook.kind === 'meta' ? (
+              <p className="text-[12px] text-gray-500">Raw Meta payloads forward all events. Event selection is disabled.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {ALL_EVENTS.map((event) => {
+                  const isActive = editingEvents
+                    ? selectedEvents.includes(event.value)
+                    : webhook.events.includes(event.value);
 
-                return (
-                  <button
-                    key={event.value}
-                    disabled={!editingEvents}
-                    onClick={() => {
-                      if (!editingEvents) return;
-                      setSelectedEvents((prev) =>
-                        prev.includes(event.value)
-                          ? prev.filter((e) => e !== event.value)
-                          : [...prev, event.value]
-                      );
-                    }}
-                    className={cn(
-                      "flex items-start gap-2 text-left p-2.5 rounded-lg border transition-all",
-                      isActive
-                        ? "bg-[#128C7E]/5 border-[#128C7E]/25 text-[#128C7E]"
-                        : "bg-white border-[#EDEDED] text-gray-400",
-                      editingEvents && "cursor-pointer hover:border-[#128C7E]/40",
-                      !editingEvents && "cursor-default"
-                    )}
-                  >
-                    <div className={cn(
-                      "w-3.5 h-3.5 rounded-sm border shrink-0 mt-0.5 flex items-center justify-center",
-                      isActive ? "bg-[#128C7E] border-[#128C7E]" : "bg-white border-gray-200"
-                    )}>
-                      {isActive && <Check className="w-2.5 h-2.5 text-white" />}
-                    </div>
-                    <div>
-                      <p className={cn("text-[11px] font-bold", isActive ? "text-[#128C7E]" : "text-gray-600")}>{event.label}</p>
-                      <p className="text-[10px] text-gray-400 mt-0.5 leading-relaxed">{event.description}</p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                  return (
+                    <button
+                      key={event.value}
+                      disabled={!editingEvents}
+                      onClick={() => {
+                        if (!editingEvents) return;
+                        setSelectedEvents((prev) =>
+                          prev.includes(event.value)
+                            ? prev.filter((e) => e !== event.value)
+                            : [...prev, event.value]
+                        );
+                      }}
+                      className={cn(
+                        "flex items-start gap-2 text-left p-2.5 rounded-lg border transition-all",
+                        isActive
+                          ? "bg-[#128C7E]/5 border-[#128C7E]/25 text-[#128C7E]"
+                          : "bg-white border-[#EDEDED] text-gray-400",
+                        editingEvents && "cursor-pointer hover:border-[#128C7E]/40",
+                        !editingEvents && "cursor-default"
+                      )}
+                    >
+                      <div className={cn(
+                        "w-3.5 h-3.5 rounded-sm border shrink-0 mt-0.5 flex items-center justify-center",
+                        isActive ? "bg-[#128C7E] border-[#128C7E]" : "bg-white border-gray-200"
+                      )}>
+                        {isActive && <Check className="w-2.5 h-2.5 text-white" />}
+                      </div>
+                      <div>
+                        <p className={cn("text-[11px] font-bold", isActive ? "text-[#128C7E]" : "text-gray-600")}>{event.label}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5 leading-relaxed">{event.description}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
-            {!editingEvents && webhook.events.length === 0 && (
+            {!editingEvents && webhook.events.length === 0 && webhook.kind === 'whatflow-web' && (
               <p className="text-[11px] text-gray-400 italic">Subscribed to all events</p>
             )}
           </div>
@@ -541,12 +556,13 @@ interface CreateWebhookFormProps {
 
 function CreateWebhookForm({ teamId, authFetch, onCreated, onCancel }: CreateWebhookFormProps) {
   const [url, setUrl] = useState('');
-  const [kind] = useState<'whatflow-web'>('whatflow-web');
+  const [kind, setKind] = useState<'whatflow-web' | 'meta'>('whatflow-web');
   const [selectedEvents, setSelectedEvents] = useState<WebhookEvent[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
   const [secretCopied, setSecretCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDone, setIsDone] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -567,6 +583,7 @@ function CreateWebhookForm({ teamId, authFetch, onCreated, onCancel }: CreateWeb
       if (!res.ok) throw new Error(data?.message ?? `Error ${res.status}`);
       setCreatedSecret(data.secretPlaintext);
       onCreated(data.webhook);
+      setIsDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create webhook');
     } finally {
@@ -602,7 +619,7 @@ function CreateWebhookForm({ teamId, authFetch, onCreated, onCancel }: CreateWeb
         <div className="mx-6 mt-5 p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4 text-amber-600 shrink-0" />
-            <p className="text-[13px] font-bold text-amber-800">Copy your signing secret — shown only once!</p>
+            <p className="text-[13px] font-bold text-amber-800">New signing secret — copy now!</p>
           </div>
           <div className="flex items-center gap-2">
             <code className="flex-1 font-mono text-[12px] bg-white border border-amber-200 rounded-lg px-3 py-2 text-amber-900 tracking-wider truncate">
@@ -616,10 +633,74 @@ function CreateWebhookForm({ teamId, authFetch, onCreated, onCancel }: CreateWeb
               {secretCopied ? 'Copied!' : 'Copy'}
             </button>
           </div>
+          <p className="text-[11px] text-amber-600">This secret will only be shown once. Please save it securely.</p>
         </div>
       )}
 
+      {isDone ? (
+        <div className="px-6 py-8 text-center space-y-6">
+          <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto border border-emerald-100 shadow-sm">
+            <Check className="w-6 h-6 text-emerald-500" />
+          </div>
+          <div className="space-y-1">
+            <p className="text-[15px] font-bold text-gray-900">Webhook Registered!</p>
+            <p className="text-[13px] text-gray-500">Your events are now being dispatched to the endpoint.</p>
+          </div>
+          <button
+            onClick={onCancel}
+            className="px-8 py-2 bg-[#128C7E] hover:bg-[#075E54] text-white text-[13px] font-bold rounded-lg shadow-sm transition-all"
+          >
+            Done
+          </button>
+        </div>
+      ) : (
       <form onSubmit={handleSubmit} className="px-6 py-5 space-y-6">
+        {/* Webhook Type */}
+        <div className="space-y-1.5">
+          <label className="block text-[12px] font-bold text-gray-700 uppercase tracking-wider">
+            Webhook Type
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setKind('whatflow-web')}
+              className={cn(
+                "p-3 rounded-xl border text-left transition-all",
+                kind === 'whatflow-web' 
+                  ? "bg-[#128C7E]/5 border-[#128C7E]/30 ring-1 ring-[#128C7E]/20" 
+                  : "bg-white border-[#EDEDED] hover:border-gray-300"
+              )}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className={cn("text-[13px] font-bold", kind === 'whatflow-web' ? "text-[#128C7E]" : "text-gray-900")}>WhatFlow Events</span>
+                <div className={cn("w-3.5 h-3.5 rounded-full border flex items-center justify-center", kind === 'whatflow-web' ? "border-[#128C7E] bg-[#128C7E]" : "border-gray-300")}>
+                  {kind === 'whatflow-web' && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                </div>
+              </div>
+              <p className="text-[11px] text-gray-500 leading-relaxed">Receive structured, platform-agnostic event payloads.</p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setKind('meta')}
+              className={cn(
+                "p-3 rounded-xl border text-left transition-all",
+                kind === 'meta' 
+                  ? "bg-blue-50 border-blue-200 ring-1 ring-blue-100" 
+                  : "bg-white border-[#EDEDED] hover:border-gray-300"
+              )}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className={cn("text-[13px] font-bold", kind === 'meta' ? "text-blue-700" : "text-gray-900")}>Raw Meta Forwarding</span>
+                <div className={cn("w-3.5 h-3.5 rounded-full border flex items-center justify-center", kind === 'meta' ? "border-blue-600 bg-blue-600" : "border-gray-300")}>
+                  {kind === 'meta' && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                </div>
+              </div>
+              <p className="text-[11px] text-gray-500 leading-relaxed">Receive exact copies of Meta's WhatsApp Cloud API payloads.</p>
+            </button>
+          </div>
+        </div>
+
         {/* URL */}
         <div className="space-y-1.5">
           <label className="block text-[12px] font-bold text-gray-700 uppercase tracking-wider">
@@ -637,6 +718,7 @@ function CreateWebhookForm({ teamId, authFetch, onCreated, onCancel }: CreateWeb
         </div>
 
         {/* Events */}
+        {kind === 'whatflow-web' && (
         <div className="space-y-2">
           <label className="block text-[12px] font-bold text-gray-700 uppercase tracking-wider">
             Events to Subscribe <span className="normal-case font-normal text-gray-400 ml-1">(leave empty for all)</span>
@@ -671,6 +753,7 @@ function CreateWebhookForm({ teamId, authFetch, onCreated, onCancel }: CreateWeb
             })}
           </div>
         </div>
+        )}
 
         {error && (
           <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-100 rounded-lg">
@@ -700,6 +783,7 @@ function CreateWebhookForm({ teamId, authFetch, onCreated, onCancel }: CreateWeb
           </button>
         </div>
       </form>
+      )}
     </div>
   );
 }

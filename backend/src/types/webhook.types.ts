@@ -69,7 +69,13 @@ export type WebhookEventName =
   | 'conversation.message.received'
   | 'conversation.message.sent'
   | 'conversation.window.opened'
-  | 'conversation.window.closed';
+  | 'conversation.window.closed'
+  | 'conversation.started'
+  | 'conversation.inactive'
+  | 'conversation.ended'
+  | 'message.delivered'
+  | 'message.read'
+  | 'message.failed';
 
 /** Payload for message-received and message-sent events. */
 export interface MessageEventData {
@@ -87,11 +93,35 @@ export interface MessageEventData {
   timestamp: string; // ISO-8601
 }
 
-/** Payload for window-opened and window-closed events. */
+/** Payload for window-opened and window-closed events (legacy). */
 export interface WindowEventData {
   conversationId: number;
   channelId: number;
   customerNumber: string;
+  timestamp: string; // ISO-8601
+}
+
+/** Payload for conversation lifecycle events (started, inactive, ended). */
+export interface ConversationLifecycleEventData {
+  conversationId: number;
+  channelId: number;
+  customerNumber: string;
+  /** Reason for the event, e.g. 'agent', 'manual', '24h_inactivity' */
+  reason?: string;
+  timestamp: string; // ISO-8601
+}
+
+/** Payload for message status delivery events (delivered, read, failed). */
+export interface MessageStatusEventData {
+  messageId: number;
+  channelId: number;
+  /** Customer's WhatsApp number in E.164 format */
+  customerNumber: string;
+  /** WhatsApp message ID (wamid) for correlation */
+  wamid: string;
+  /** Only present for `message.failed` */
+  errorCode?: number;
+  errorMessage?: string;
   timestamp: string; // ISO-8601
 }
 
@@ -103,16 +133,22 @@ export type WhatflowWebhookEvent =
   | { event: 'conversation.message.received'; data: MessageEventData }
   | { event: 'conversation.message.sent'; data: MessageEventData }
   | { event: 'conversation.window.opened'; data: WindowEventData }
-  | { event: 'conversation.window.closed'; data: WindowEventData };
+  | { event: 'conversation.window.closed'; data: WindowEventData }
+  | { event: 'conversation.started'; data: ConversationLifecycleEventData }
+  | { event: 'conversation.inactive'; data: ConversationLifecycleEventData }
+  | { event: 'conversation.ended'; data: ConversationLifecycleEventData }
+  | { event: 'message.delivered'; data: MessageStatusEventData }
+  | { event: 'message.read'; data: MessageStatusEventData }
+  | { event: 'message.failed'; data: MessageStatusEventData };
 
-/** The full envelope shape posted to user endpoints for `whatflow`-kind webhooks. */
+/** The full envelope shape posted to user endpoints for `whatflow-web`-kind webhooks. */
 export interface WhatflowWebhookEnvelope {
   event: WebhookEventName;
   version: 'v1';
   /** UUID per delivery for deduplication and audit */
   idempotencyKey: string;
   timestamp: string; // ISO-8601
-  data: MessageEventData | WindowEventData;
+  data: MessageEventData | WindowEventData | ConversationLifecycleEventData | MessageStatusEventData;
 }
 
 /**

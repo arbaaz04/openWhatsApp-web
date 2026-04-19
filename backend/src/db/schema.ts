@@ -31,6 +31,12 @@ export const webhookEventEnum = pgEnum('webhook_event', [
   'conversation.message.sent',
   'conversation.window.opened',
   'conversation.window.closed',
+  'conversation.started',
+  'conversation.inactive',
+  'conversation.ended',
+  'message.delivered',
+  'message.read',
+  'message.failed',
 ]);
 
 // ---------------------------------------------------------------------------

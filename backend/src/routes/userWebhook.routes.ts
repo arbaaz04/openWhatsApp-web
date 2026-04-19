@@ -32,6 +32,12 @@ const VALID_EVENTS = [
   'conversation.message.sent',
   'conversation.window.opened',
   'conversation.window.closed',
+  'conversation.started',
+  'conversation.inactive',
+  'conversation.ended',
+  'message.delivered',
+  'message.read',
+  'message.failed',
 ] as const;
 
 const WebhookKindSchema = z.enum(['whatflow-web', 'meta']).default('whatflow-web');

@@ -40,11 +40,11 @@
 import { webhookRepository } from '../repositories/webhookRepository.js';
 import { logger } from '../utils/logger.js';
 import type {
-  WhatflowWebhookEnvelope,
-  WhatflowBatchEnvelope,
   WebhookEventName,
   MessageEventData,
   WindowEventData,
+  ConversationLifecycleEventData,
+  MessageStatusEventData,
   UserWebhookJob,
 } from '../types/webhook.types.js';
 import type { WorkerBindings } from '../types/bindings.js';
@@ -152,7 +152,7 @@ async function flushBatch(webhookId: number): Promise<void> {
         webhookId: target.id,
         encryptionKey,
         eventName: entry.envelope.event,
-        eventData: entry.envelope.data as MessageEventData | WindowEventData,
+        eventData: entry.envelope.data as MessageEventData | WindowEventData | ConversationLifecycleEventData | MessageStatusEventData,
         attempt: 1,
         idempotencyKey: entry.envelope.idempotencyKey,
       };
@@ -226,7 +226,7 @@ interface DeliveryTarget {
 export interface DispatchEventInput {
   eventName: WebhookEventName;
   channelId: number;
-  eventData: MessageEventData | WindowEventData;
+  eventData: MessageEventData | WindowEventData | ConversationLifecycleEventData | MessageStatusEventData;
   rawMetaPayload?: unknown;
   encryptionKey: string;
   /** Optional — provide to enable retry enqueuing on failure. */

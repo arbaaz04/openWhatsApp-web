@@ -213,6 +213,38 @@ describe('webhookDeliveryService.dispatchEvent — whatflow kind (Phase 1)', () 
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
+  it('delivers one of the new events (message.delivered) correctly', async () => {
+    vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([
+      makeWebhook({ events: ['message.delivered'] }),
+    ]);
+
+    const deliveredData = {
+      conversationId: 43,
+      messageId: 123,
+      channelId: 5,
+      customerNumber: '+1234567890',
+      body: 'Delivered confirmation',
+      direction: 'outgoing' as const,
+      wamid: 'wamid.del.123',
+      timestamp: new Date().toISOString(),
+    };
+
+    await webhookDeliveryService.dispatchEvent({
+      eventName: 'message.delivered',
+      channelId: 5,
+      eventData: deliveredData,
+      encryptionKey: HEX_KEY,
+    });
+    await webhookDeliveryService._flushAllBatches();
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const envelope = JSON.parse(init.body as string);
+    // In batch mode, envelope.events is an array
+    expect(envelope.events[0].event).toBe('message.delivered');
+    expect(envelope.events[0].data).toEqual(deliveredData);
+  });
+
   it('does nothing when no webhooks are registered for the channel', async () => {
     vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([]);
 
