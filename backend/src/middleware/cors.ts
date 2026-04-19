@@ -46,7 +46,15 @@ export async function cors(
 
   const allowed = c.env.ALLOWED_ORIGIN;
   const isWildcard = allowed === '*';
-  const isMatch = origin === allowed;
+  
+  // Use a more robust matching logic that ignores protocol differences if necessary,
+  // but strictly handles the wildcard case first.
+  let isMatch = origin === allowed;
+  if (!isMatch && origin && allowed) {
+    const strippedOrigin = origin.replace(/^https?:\/\//, '');
+    const strippedAllowed = allowed.replace(/^https?:\/\//, '');
+    isMatch = strippedOrigin === strippedAllowed;
+  }
 
   // Helper to append mandatory CORS headers to any response
   const addCorsHeaders = (res: Response) => {

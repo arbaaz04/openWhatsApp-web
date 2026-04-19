@@ -183,7 +183,7 @@ jobs:
         run: |
           set -euo pipefail
           npx wrangler deploy --env production \
-            --var ALLOWED_ORIGIN:https://${{ vars.APP_FRONTEND_URL }} \
+            --var ALLOWED_ORIGIN:${{ vars.ALLOWED_ORIGIN }} \
             --var SUPABASE_URL:${{ vars.SUPABASE_URL }} \
             --var META_APP_ID:${{ vars.META_APP_ID }} \
             --var ENVIRONMENT:${{ vars.ENVIRONMENT }}
