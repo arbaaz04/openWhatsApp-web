@@ -94,6 +94,66 @@ async function fetchPhoneNumberInfo(wabaId: string, accessToken: string): Promis
 }
 
 /**
+ * Fetches the display phone number for a specific phone number ID.
+ */
+async function fetchSinglePhoneInfo(phoneNumberId: string, accessToken: string): Promise<string> {
+  const url = `https://graph.facebook.com/v25.0/${phoneNumberId}?access_token=${accessToken}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new ApiError(502, 'Failed to fetch display phone number from Meta', 'META_PHONE_FETCH_FAILED');
+  
+  const data = await res.json() as { display_phone_number?: string };
+  return data.display_phone_number || '';
+}
+
+/**
+ * Subscribes the application to the WABA webhooks.
+ * Mandatory after completing Embedded Signup.
+ */
+async function subscribeAppToWebhooks(wabaId: string, accessToken: string): Promise<void> {
+  const url = `https://graph.facebook.com/v25.0/${wabaId}/subscribed_apps`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  
+  if (!res.ok) {
+    const errorBody = await res.text();
+    logger.warn('Failed to subscribe app to WABA webhooks', { wabaId, status: res.status, body: errorBody });
+    // Treat as non-fatal to allow onboarding to finish
+  } else {
+    logger.info('Successfully subscribed to WABA webhooks', { wabaId });
+  }
+}
+
+/**
+ * Registers the phone number on WhatsApp Cloud API.
+ * Mandatory to begin sending/receiving messages.
+ */
+async function registerPhoneNumber(phoneNumberId: string, accessToken: string): Promise<void> {
+  const url = `https://graph.facebook.com/v25.0/${phoneNumberId}/register`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json' 
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      pin: '123456' // Fallback PIN if user skipped creating one.
+    }),
+  });
+  
+  if (!res.ok) {
+    const errorBody = await res.text();
+    logger.warn('Phone registration returned non-200. It may already be registered or requires the custom PIN set during signup.', { 
+      phoneNumberId, status: res.status, body: errorBody 
+    });
+  } else {
+    logger.info('Successfully registered phone number on Cloud API', { phoneNumberId });
+  }
+}
+
+/**
  * Service responsible for WhatsApp Cloud API authentication flows.
  * Converts short-lived embedded signup codes into persisted channel records.
  */
@@ -145,9 +205,9 @@ export const authService = {
     const plainAccessToken = await fetchMetaAccessToken(clientId, clientSecret, code);
 
     // Use provided IDs or auto-discover
-    let finalWabaId = wabaId;
-    let finalPhoneNumberId = phoneNumberId;
-    let phoneNumber = '';
+    let finalWabaId: string;
+    let finalPhoneNumberId: string;
+    let phoneNumber: string;
 
     if (!wabaId || !phoneNumberId) {
       // Auto-discover if not provided
@@ -155,9 +215,18 @@ export const authService = {
       const phoneInfo = await fetchPhoneNumberInfo(finalWabaId, plainAccessToken);
       finalPhoneNumberId = phoneInfo.id;
       phoneNumber = phoneInfo.display_phone_number;
+    } else {
+      finalWabaId = wabaId;
+      finalPhoneNumberId = phoneNumberId;
+      // Always fetch display number when embedded signup provides the IDs
+      phoneNumber = await fetchSinglePhoneInfo(finalPhoneNumberId, plainAccessToken);
     }
     
     logger.info('Using business IDs', { wabaId: finalWabaId, phoneNumberId: finalPhoneNumberId, phoneNumber });
+
+    // Perform Embedded Signup mandatory post-actions
+    await subscribeAppToWebhooks(finalWabaId, plainAccessToken);
+    await registerPhoneNumber(finalPhoneNumberId, plainAccessToken);
 
     // Encrypt before writing to the database — never store plaintext tokens
     const encryptedToken = await encrypt(plainAccessToken, encryptionKey);

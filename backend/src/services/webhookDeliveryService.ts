@@ -46,6 +46,8 @@ import type {
   ConversationLifecycleEventData,
   MessageStatusEventData,
   UserWebhookJob,
+  WhatflowWebhookEnvelope,
+  WhatflowBatchEnvelope,
 } from '../types/webhook.types.js';
 import type { WorkerBindings } from '../types/bindings.js';
 

@@ -83,6 +83,7 @@ describe('cors middleware', () => {
       req: { method: 'GET', header: (k: string) => k === 'Origin' ? 'https://attacker.com' : undefined },
       env: { ALLOWED_ORIGIN: 'https://app.whatflow.io' },
       res: null as unknown,
+      _res: null as unknown,
     };
     Object.defineProperty(c, 'res', {
       set: (v: unknown) => { setCalled = true; c._res = v; },

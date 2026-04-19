@@ -181,7 +181,7 @@ export interface UserWebhookJob {
   /** Event name that triggered this delivery */
   eventName: WebhookEventName;
   /** Typed event payload */
-  eventData: MessageEventData | WindowEventData;
+  eventData: MessageEventData | WindowEventData | ConversationLifecycleEventData | MessageStatusEventData;
   /**
    * Raw Meta payload — forwarded verbatim for `meta`-kind webhooks.
    * Null for non-Meta-triggered events.

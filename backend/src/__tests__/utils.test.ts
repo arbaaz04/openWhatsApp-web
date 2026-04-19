@@ -175,6 +175,7 @@ describe('Utils Suite', () => {
       SUPABASE_URL: 'https://bfctfnsjobtpgolladon.supabase.co',
       INBOX_SYNC: {} as DurableObjectNamespace,
       WEBHOOK_QUEUE: {} as any,
+      USER_WEBHOOK_QUEUE: {} as any,
     };
 
     it('should not throw when all required bindings are present', () => {

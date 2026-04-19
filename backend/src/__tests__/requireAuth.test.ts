@@ -180,11 +180,11 @@ describe('requireAuth middleware', () => {
 
   it('accepts a valid ES256 token using Supabase JWKS', async () => {
     const kid = 'test-es256-key';
-    const keyPair = await crypto.subtle.generateKey(
+    const keyPair = (await crypto.subtle.generateKey(
       { name: 'ECDSA', namedCurve: 'P-256' },
       true,
       ['sign', 'verify']
-    );
+    )) as CryptoKeyPair;
 
     const publicJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
     const token = await signEs256Jwt(
