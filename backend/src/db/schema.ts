@@ -12,7 +12,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 // ---------------------------------------------------------------------------
-// Webhook & Production Infrastructure Sync (Final Phase)
+// Webhook enums — added for user-registered outbound webhook support
 // ---------------------------------------------------------------------------
 
 /**
