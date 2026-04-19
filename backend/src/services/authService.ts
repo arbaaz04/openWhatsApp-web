@@ -250,7 +250,7 @@ export const authService = {
 
         await db
           .update(channels)
-          .set({ wabaId: finalWabaId, accessToken: encryptedToken })
+          .set({ wabaId: finalWabaId, accessToken: encryptedToken, phoneNumber: phoneNumber })
           .where(eq(channels.whatsappId, finalPhoneNumberId));
 
         logger.info('Channel credentials rotated', { wabaId: finalWabaId, phoneNumberId: finalPhoneNumberId });

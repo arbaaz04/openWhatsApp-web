@@ -4,7 +4,7 @@ import { requireRole } from '../middleware/requireRole.js';
 import { createLogger } from '../utils/logger.js';
 import { ApiError } from '../utils/errors.js';
 import { type DrizzleDb } from '../db/index.js';
-import { users, teams, teamMembers } from '../db/schema.js';
+import { users, teams, teamMembers, channels } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
 
@@ -24,6 +24,20 @@ userRouter.use('*', async (c, next) => {
     c.set('db', createDb(c.env.HYPERDRIVE.connectionString));
   }
   await next();
+});
+
+// ---------------------------------------------------------------------------
+// Shared schemas
+// ---------------------------------------------------------------------------
+const ChannelRowSchema = z.object({
+  id: z.number(),
+  teamId: z.number(),
+  type: z.enum(['sim', 'business_app']),
+  phoneNumber: z.string().nullable(),
+  whatsappId: z.string().nullable(),
+  wabaId: z.string().nullable(),
+  status: z.enum(['active', 'paused', 'disabled']),
+  createdAt: z.string(),
 });
 
 // ---------------------------------------------------------------------------
@@ -392,6 +406,58 @@ userRouter.openapi(removeMemberRoute, async (c) => {
   log.info('Member removed from team', { teamId, targetUserId });
 
   return c.json({ success: true }, 200);
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/users/teams/:teamId/channels — list connected channels
+// ---------------------------------------------------------------------------
+const listChannelsRoute = createRoute({
+  method: 'get',
+  path: '/teams/:teamId/channels',
+  request: {
+    params: z.object({ teamId: z.string().regex(/^\d+$/) }),
+  },
+  responses: {
+    200: {
+      description: 'List of channels for the team',
+      content: {
+        'application/json': {
+          schema: z.object({
+            success: z.literal(true),
+            channels: z.array(ChannelRowSchema),
+          }),
+        },
+      },
+    },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Insufficient permissions' },
+  },
+});
+
+userRouter.use('/teams/:teamId/channels', requireAuth);
+userRouter.use('/teams/:teamId/channels', requireRole('admin', 'developer', 'subordinate'));
+userRouter.openapi(listChannelsRoute, async (c) => {
+  const db = c.get('db');
+  const log = createLogger({ requestId: c.get('requestId') });
+  const teamId = parseInt(c.req.param('teamId'), 10);
+
+  const rows = await db
+    .select()
+    .from(channels)
+    .where(eq(channels.teamId, teamId));
+
+  log.info('Channels listed', { teamId, count: rows.length });
+
+  return c.json(
+    {
+      success: true as const,
+      channels: rows.map((r) => ({
+        ...r,
+        createdAt: r.createdAt.toISOString(),
+      })),
+    },
+    200
+  );
 });
 
 export default userRouter;

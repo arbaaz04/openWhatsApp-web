@@ -2,7 +2,6 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { createLogger, logger } from './utils/logger.js';
 import { ApiError, formatErrorResponse } from './utils/errors.js';
 import { createDb } from './db/index.js';
-import type { DrizzleDb } from './db/index.js';
 import { validateEnv } from './utils/validateEnv.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
 import { timeout } from './middleware/timeout.js';
