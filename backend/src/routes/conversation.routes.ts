@@ -11,7 +11,7 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { createLogger } from '../utils/logger.js';
 import { ApiError } from '../utils/errors.js';
 import { rateLimiter } from '../utils/rateLimiter.js';
-import { db } from '../db/index.js';
+import { type DrizzleDb } from '../db/index.js';
 import { conversations, channels, teamMembers } from '../db/schema.js';
 import { messageRepository } from '../repositories/messageRepository.js';
 import { sendWhatsAppMessage } from '../utils/metaApiClient.js';
@@ -19,21 +19,26 @@ import { decrypt } from '../utils/encryption.js';
 import { eq, and, desc } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
 
-// ---------------------------------------------------------------------------
-// Type augmentation
-// ---------------------------------------------------------------------------
-
 type Variables = {
   requestId: string;
   userId: string;
   userEmail: string;
   teamId: string;
+  db: DrizzleDb;
 };
 
 const conversationRouter = new OpenAPIHono<{
   Bindings: WorkerBindings;
   Variables: Variables;
 }>();
+
+conversationRouter.use('*', async (c, next) => {
+  if (!c.get('db') && c.env?.HYPERDRIVE) {
+    const { createDb } = await import('../db/index.js');
+    c.set('db', createDb(c.env.HYPERDRIVE.connectionString));
+  }
+  await next();
+});
 
 // ---------------------------------------------------------------------------
 // Shared middleware — all /api/conversations routes require authentication
@@ -63,6 +68,7 @@ conversationRouter.use('/:conversationId/messages', async (c, next) => {
  * @throws {ApiError 403} caller's team does not own the conversation
  */
 async function resolveAndAuthorize(
+  db: DrizzleDb,
   conversationId: number,
   callerUserId: string
 ): Promise<{
@@ -134,6 +140,7 @@ const listConversationsRoute = createRoute({
 });
 
 conversationRouter.openapi(listConversationsRoute, async (c) => {
+  const db = c.get('db');
   const log = createLogger({ requestId: c.get('requestId') });
   const userId = c.get('userId');
   const { limit } = c.req.valid('query');
@@ -234,14 +241,15 @@ const listMessagesRoute = createRoute({
 });
 
 conversationRouter.openapi(listMessagesRoute, async (c) => {
+  const db = c.get('db');
   const log = createLogger({ requestId: c.get('requestId') });
   const conversationId = parseInt(c.req.param('conversationId'), 10);
   const { before, limit } = c.req.valid('query');
 
   // Authorize based on userId since conversations span all teams a user belongs to
-  await resolveAndAuthorize(conversationId, c.get('userId'));
+  await resolveAndAuthorize(db, conversationId, c.get('userId'));
 
-  const { items, hasMore } = await messageRepository.listMessages(conversationId, {
+  const { items, hasMore } = await messageRepository.listMessages(db, conversationId, {
     before: before !== undefined ? parseInt(before, 10) : undefined,
     limit: limit !== undefined ? parseInt(limit, 10) : undefined,
   });
@@ -337,13 +345,14 @@ const sendMessageRoute = createRoute({
 });
 
 conversationRouter.openapi(sendMessageRoute, async (c) => {
+  const db = c.get('db');
   const log = createLogger({ requestId: c.get('requestId') });
   const userId = c.get('userId');
   const conversationId = parseInt(c.req.param('conversationId'), 10);
   const { type, body, payload } = c.req.valid('json');
 
   // 1. Resolve conversation and enforce team ownership in one DB query
-  const row = await resolveAndAuthorize(conversationId, userId);
+  const row = await resolveAndAuthorize(db, conversationId, userId);
 
   if (!row.whatsappId) {
     throw new ApiError(422, 'This channel does not have a configured WhatsApp phone number ID', 'CHANNEL_MISCONFIGURED');
@@ -380,6 +389,7 @@ conversationRouter.openapi(sendMessageRoute, async (c) => {
 
   // 4. Persist the outbound message record (after Meta confirms it)
   const { messageId } = await messageRepository.createOutboundMessage(
+    db,
     conversationId,
     body,
     wamid,
@@ -420,27 +430,28 @@ conversationRouter.openapi(sendMessageRoute, async (c) => {
 
   // 6. Dispatch `conversation.message.sent` to user-registered webhooks.
   //    Fire-and-forget via waitUntil so it never blocks the HTTP response.
-  if (c.env.DATA_ENCRYPTION_KEY) {
-    const { webhookDeliveryService } = await import('../services/webhookDeliveryService.js');
-    c.executionCtx?.waitUntil(
-      webhookDeliveryService.dispatchEvent({
-        eventName: 'conversation.message.sent',
-        channelId: row.channelId,
-        eventData: {
-          conversationId,
-          messageId,
+    if (c.env.DATA_ENCRYPTION_KEY) {
+      const { webhookDeliveryService } = await import('../services/webhookDeliveryService.js');
+      c.executionCtx?.waitUntil(
+        webhookDeliveryService.dispatchEvent({
+          eventName: 'conversation.message.sent',
           channelId: row.channelId,
-          customerNumber: row.customerNumber,
-          body,
-          direction: 'outgoing',
-          wamid,
-          timestamp: new Date().toISOString(),
-        },
-        encryptionKey: c.env.DATA_ENCRYPTION_KEY,
-        env: { USER_WEBHOOK_QUEUE: c.env.USER_WEBHOOK_QUEUE },
-      })
-    );
-  }
+          eventData: {
+            conversationId,
+            messageId,
+            channelId: row.channelId,
+            customerNumber: row.customerNumber,
+            body,
+            direction: 'outgoing',
+            wamid,
+            timestamp: new Date().toISOString(),
+          },
+          encryptionKey: c.env.DATA_ENCRYPTION_KEY,
+          env: { USER_WEBHOOK_QUEUE: c.env.USER_WEBHOOK_QUEUE },
+          db,
+        })
+      );
+    }
 
   return c.json({ success: true as const, messageId, wamid }, 201);
 });

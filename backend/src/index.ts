@@ -1,7 +1,8 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { createLogger, logger } from './utils/logger.js';
 import { ApiError, formatErrorResponse } from './utils/errors.js';
-import { createDb, setDb } from './db/index.js';
+import { createDb } from './db/index.js';
+import type { DrizzleDb } from './db/index.js';
 import { validateEnv } from './utils/validateEnv.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
 import { timeout } from './middleware/timeout.js';
@@ -22,18 +23,9 @@ import userWebhookRouter from './routes/userWebhook.routes.js';
 // ---------------------------------------------------------------------------
 // Hono type extensions — Variables available on every request context
 // ---------------------------------------------------------------------------
-type Variables = {
-  /** Unique ID per request for log correlation across the entire middleware chain */
-  requestId: string;
-  /** Supabase user UUID — set by requireAuth */
-  userId: string;
-  /** Authenticated user email — set by requireAuth */
-  userEmail: string;
-  /** Resolved team ID — set by requireRole */
-  teamId: string;
-};
+import type { AppVariables } from './types/honoContext.js';
 
-const app = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>({
+const app = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: AppVariables }>({
   defaultHook: (result, c) => {
     if (!result.success) {
       return c.json(
@@ -70,7 +62,7 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// 5. Request body size guard — rejects payloads over 512KB to prevent memory exhaustion
+// 6. Request body size guard — rejects payloads over 512KB to prevent memory exhaustion
 app.use('*', async (c, next) => {
   const MAX_BODY_BYTES = 512 * 1024;
   const hasBody = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.req.method);
@@ -103,16 +95,17 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// 6. DB initialisation via Hyperdrive — Hyperdrive pools connections at the
-//    Cloudflare edge, so cold-start latency for DB queries is drastically reduced.
+// 7. DB initialisation via Hyperdrive — Creates a fresh DB instance for every 
+//    single request. This avoids stale connection errors and is the 
+//    recommended best-practice for Hyperdrive.
 app.use('*', async (c, next) => {
   if (c.env?.HYPERDRIVE) {
-    setDb(createDb(c.env.HYPERDRIVE.connectionString));
+    c.set('db', createDb(c.env.HYPERDRIVE.connectionString));
   }
   await next();
 });
 
-// 7. Structured request logging with requestId — runs after DB init so
+// 8. Structured request logging with requestId — runs after DB init so
 //    we can log a complete picture including durationMs on response
 app.use('*', async (c, next) => {
   const log = createLogger(
@@ -206,7 +199,6 @@ app.get('/health/ready', (c) => {
   );
 });
 
-/** Minimal health check — does NOT touch the database. Used to debug worker hangs. */
 app.get('/api/health/minimal', (c) => c.json({ status: 'ok', db: 'skipped' }, 200));
 
 app.get('/', (c) => c.json({ success: true, message: 'Whatflow API Online' }));
@@ -216,31 +208,30 @@ export { InboxSync } from './durable_objects/InboxSync.js';
 export default {
   fetch: app.fetch,
 
-  /**
-   * Cloudflare Queue consumer — unified handler for both queues.
-   *
-   * Routes by queue name:
-   * - `whatflow-web-webhooks[-dev]`      → incoming Meta webhook payloads
-   * - `whatflow-web-user-webhooks[-dev]` → user webhook retry jobs
-   */
   async queue(
     batch: MessageBatch,
     env: WorkerBindings,
     _ctx: ExecutionContext
   ): Promise<void> {
-    if (env.HYPERDRIVE) {
-      setDb(createDb(env.HYPERDRIVE.connectionString));
-    }
-
     const queueName: string = (batch as MessageBatch & { queue: string }).queue ?? '';
 
     // ── User webhook retry queue ──────────────────────────────────────────
     if (queueName.includes('user-webhooks')) {
       const { webhookDeliveryService } = await import('./services/webhookDeliveryService.js');
+      const { createDb } = await import('./db/index.js');
+      
+      // Instantiate DB for this batch if Hyperdrive is available
+      const db = env.HYPERDRIVE ? createDb(env.HYPERDRIVE.connectionString) : null;
 
       for (const message of (batch as MessageBatch<import('./types/webhook.types.js').UserWebhookJob>).messages) {
+        if (!db) {
+          logger.error('Database connection unavailable for webhook retry processing');
+          message.retry();
+          continue;
+        }
+
         try {
-          await webhookDeliveryService.deliverFromQueue(message.body, env);
+          await webhookDeliveryService.deliverFromQueue(db, message.body, env);
           message.ack();
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : String(err);
@@ -257,10 +248,20 @@ export default {
 
     // ── Incoming Meta webhook queue ───────────────────────────────────────
     const { webhookService } = await import('./services/webhookService.js');
+    const { createDb } = await import('./db/index.js');
+    
+    // Instantiate DB for this batch if Hyperdrive is available
+    const db = env.HYPERDRIVE ? createDb(env.HYPERDRIVE.connectionString) : null;
 
     for (const message of (batch as MessageBatch<MetaWebhookPayload>).messages) {
+      if (!db) {
+        logger.error('Database connection unavailable for queue processing');
+        message.retry();
+        continue;
+      }
+
       try {
-        await webhookService.processPayload(message.body, env);
+        await webhookService.processPayload(db, message.body, env);
         message.ack();
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);

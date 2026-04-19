@@ -3,14 +3,28 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
 import { createLogger } from '../utils/logger.js';
 import { ApiError } from '../utils/errors.js';
-import { db } from '../db/index.js';
+import { type DrizzleDb } from '../db/index.js';
 import { users, teams, teamMembers } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
 
-type Variables = { requestId: string; userId: string; userEmail: string; teamId: string };
+type Variables = { 
+  requestId: string; 
+  userId: string; 
+  userEmail: string; 
+  teamId: string;
+  db: DrizzleDb;
+};
 
 const userRouter = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>();
+
+userRouter.use('*', async (c, next) => {
+  if (!c.get('db') && c.env?.HYPERDRIVE) {
+    const { createDb } = await import('../db/index.js');
+    c.set('db', createDb(c.env.HYPERDRIVE.connectionString));
+  }
+  await next();
+});
 
 // ---------------------------------------------------------------------------
 // GET /api/users/me — upsert and return the authenticated user's profile
@@ -49,6 +63,7 @@ const meRoute = createRoute({
 
 userRouter.use('/me', requireAuth);
   userRouter.openapi(meRoute, async (c) => {
+  const db = c.get('db');
   const log = createLogger({ requestId: c.get('requestId') });
   const userId = c.get('userId');
   const userEmail = c.get('userEmail');
@@ -179,6 +194,7 @@ const createTeamRoute = createRoute({
 
 userRouter.use('/teams', requireAuth);
 userRouter.openapi(createTeamRoute, async (c) => {
+  const db = c.get('db');
   const log = createLogger({ requestId: c.get('requestId') });
   const userId = c.get('userId');
   const { name } = c.req.valid('json');
@@ -243,6 +259,7 @@ const inviteMemberRoute = createRoute({
 userRouter.use('/teams/:teamId/members', requireAuth);
 userRouter.use('/teams/:teamId/members', requireRole('admin'));
 userRouter.openapi(inviteMemberRoute, async (c) => {
+  const db = c.get('db');
   const log = createLogger({ requestId: c.get('requestId') });
   const inviterId = c.get('userId');
   const teamId = parseInt(c.req.param('teamId'), 10);
@@ -316,6 +333,7 @@ userRouter.use('/teams/:teamId/members/:userId', requireAuth);
 userRouter.use('/teams/:teamId/members/:userId', requireRole('admin'));
 
 userRouter.openapi(updateMemberRoute, async (c) => {
+  const db = c.get('db');
   const log = createLogger({ requestId: c.get('requestId') });
   const teamId = parseInt(c.req.param('teamId'), 10);
   const targetUserId = c.req.param('userId');
@@ -357,6 +375,7 @@ const removeMemberRoute = createRoute({
 userRouter.use('/teams/:teamId/members/:userId', requireAuth);
 userRouter.use('/teams/:teamId/members/:userId', requireRole('admin'));
 userRouter.openapi(removeMemberRoute, async (c) => {
+  const db = c.get('db');
   const log = createLogger({ requestId: c.get('requestId') });
   const teamId = parseInt(c.req.param('teamId'), 10);
   const targetUserId = c.req.param('userId');

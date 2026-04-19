@@ -13,6 +13,7 @@
  */
 
 import type { WorkerBindings } from './bindings.js';
+import type { DrizzleDb } from '../db/index.js';
 
 /** Variables available on every request context after the global middleware runs. */
 export interface AppVariables {
@@ -24,6 +25,8 @@ export interface AppVariables {
   userEmail: string;
   /** Resolved team ID (string) — present after requireRole runs */
   teamId: string;
+  /** Request-scoped Drizzle instance — fresh for every request to ensure Hyperdrive stability */
+  db: DrizzleDb;
 }
 
 /** Full Hono generic environment for routers, middleware, and handlers. */

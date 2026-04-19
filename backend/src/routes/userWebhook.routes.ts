@@ -15,13 +15,28 @@ import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { requireRole } from '../middleware/requireRole.js';
 import { createLogger } from '../utils/logger.js';
+import { type DrizzleDb } from '../db/index.js';
 import { webhookRepository } from '../repositories/webhookRepository.js';
 import type { WorkerBindings } from '../types/bindings.js';
 import type { WebhookEventName } from '../types/webhook.types.js';
 
-type Variables = { requestId: string; userId: string; userEmail: string; teamId: string };
+type Variables = { 
+  requestId: string; 
+  userId: string; 
+  userEmail: string; 
+  teamId: string;
+  db: DrizzleDb;
+};
 
 const userWebhookRouter = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>();
+
+userWebhookRouter.use('*', async (c, next) => {
+  if (!c.get('db') && c.env?.HYPERDRIVE) {
+    const { createDb } = await import('../db/index.js');
+    c.set('db', createDb(c.env.HYPERDRIVE.connectionString));
+  }
+  await next();
+});
 
 // ---------------------------------------------------------------------------
 // Shared Zod schemas
@@ -113,6 +128,7 @@ const createWebhookRoute = createRoute({
 });
 
 userWebhookRouter.openapi(createWebhookRoute, async (c) => {
+  const db = c.get('db');
   const log = createLogger({ requestId: c.get('requestId') });
   const teamId = parseInt(c.req.param('teamId'), 10);
   const { url, kind, events, channelId, secret } = c.req.valid('json');
@@ -125,6 +141,7 @@ userWebhookRouter.openapi(createWebhookRoute, async (c) => {
       .join('');
 
   const webhook = await webhookRepository.create(
+    db,
     {
       teamId,
       channelId: channelId ?? null,
@@ -181,10 +198,11 @@ const listWebhooksRoute = createRoute({
 });
 
 userWebhookRouter.openapi(listWebhooksRoute, async (c) => {
+  const db = c.get('db');
   const log = createLogger({ requestId: c.get('requestId') });
   const teamId = parseInt(c.req.param('teamId'), 10);
 
-  const webhooks = await webhookRepository.listByTeam(teamId);
+  const webhooks = await webhookRepository.listByTeam(db, teamId);
 
   log.info('Webhooks listed', { teamId, count: webhooks.length });
 
@@ -231,10 +249,11 @@ const getWebhookRoute = createRoute({
 });
 
 userWebhookRouter.openapi(getWebhookRoute, async (c) => {
+  const db = c.get('db');
   const teamId = parseInt(c.req.param('teamId'), 10);
   const webhookId = parseInt(c.req.param('webhookId'), 10);
 
-  const webhook = await webhookRepository.getById(webhookId, teamId);
+  const webhook = await webhookRepository.getById(db, webhookId, teamId);
 
   return c.json(
     {
@@ -290,12 +309,14 @@ const updateWebhookRoute = createRoute({
 });
 
 userWebhookRouter.openapi(updateWebhookRoute, async (c) => {
+  const db = c.get('db');
   const log = createLogger({ requestId: c.get('requestId') });
   const teamId = parseInt(c.req.param('teamId'), 10);
   const webhookId = parseInt(c.req.param('webhookId'), 10);
   const patch = c.req.valid('json');
 
   const webhook = await webhookRepository.update(
+    db,
     webhookId,
     teamId,
     {
@@ -350,11 +371,12 @@ const deleteWebhookRoute = createRoute({
 });
 
 userWebhookRouter.openapi(deleteWebhookRoute, async (c) => {
+  const db = c.get('db');
   const log = createLogger({ requestId: c.get('requestId') });
   const teamId = parseInt(c.req.param('teamId'), 10);
   const webhookId = parseInt(c.req.param('webhookId'), 10);
 
-  await webhookRepository.delete(webhookId, teamId);
+  await webhookRepository.delete(db, webhookId, teamId);
 
   log.info('Webhook deleted', { teamId, webhookId });
 
@@ -393,6 +415,7 @@ const rotateSecretRoute = createRoute({
 });
 
 userWebhookRouter.openapi(rotateSecretRoute, async (c) => {
+  const db = c.get('db');
   const log = createLogger({ requestId: c.get('requestId') });
   const teamId = parseInt(c.req.param('teamId'), 10);
   const webhookId = parseInt(c.req.param('webhookId'), 10);
@@ -401,7 +424,7 @@ userWebhookRouter.openapi(rotateSecretRoute, async (c) => {
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 
-  await webhookRepository.update(webhookId, teamId, { secret: newSecret }, c.env.DATA_ENCRYPTION_KEY);
+  await webhookRepository.update(db, webhookId, teamId, { secret: newSecret }, c.env.DATA_ENCRYPTION_KEY);
 
   log.info('Webhook secret rotated', { teamId, webhookId });
 

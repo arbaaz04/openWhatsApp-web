@@ -38,6 +38,7 @@
  */
 
 import { webhookRepository } from '../repositories/webhookRepository.js';
+import { type DrizzleDb } from '../db/index.js';
 import { logger } from '../utils/logger.js';
 import type {
   WebhookEventName,
@@ -231,6 +232,7 @@ export interface DispatchEventInput {
   eventData: MessageEventData | WindowEventData | ConversationLifecycleEventData | MessageStatusEventData;
   rawMetaPayload?: unknown;
   encryptionKey: string;
+  db: DrizzleDb;
   /** Optional — provide to enable retry enqueuing on failure. */
   env?: Pick<WorkerBindings, 'USER_WEBHOOK_QUEUE'>;
 }
@@ -251,12 +253,12 @@ export const webhookDeliveryService = {
    * Fire-and-forget: call via `executionCtx.waitUntil(...)`.
    */
   async dispatchEvent(input: DispatchEventInput): Promise<void> {
-    const { eventName, channelId, eventData, rawMetaPayload, encryptionKey, env } = input;
+    const { eventName, channelId, eventData, rawMetaPayload, encryptionKey, env, db } = input;
 
     let targets: DeliveryTarget[];
 
     try {
-      const webhooks = await webhookRepository.listActiveByChannel(channelId, encryptionKey);
+      const webhooks = await webhookRepository.listActiveByChannel(db, channelId, encryptionKey);
       targets = webhooks.map((wh) => ({
         id: wh.id,
         url: wh.url,
@@ -343,6 +345,7 @@ export const webhookDeliveryService = {
    * `MAX_DELIVERY_ATTEMPTS`. Beyond that, lets the native DLQ handle it.
    */
   async deliverFromQueue(
+    db: DrizzleDb,
     job: UserWebhookJob,
     env: Pick<WorkerBindings, 'USER_WEBHOOK_QUEUE' | 'DATA_ENCRYPTION_KEY'>
   ): Promise<void> {
@@ -351,11 +354,6 @@ export const webhookDeliveryService = {
     // Look up the webhook — if deleted, silently discard
     let target: DeliveryTarget | null = null;
     try {
-      const rows = await webhookRepository.listActiveByChannel(-1, env.DATA_ENCRYPTION_KEY);
-      // Fallback: look up directly by ID — we need a dedicated repo method
-      // The repo's getById requires teamId; for queue consumer we use the stored ID directly.
-      // We query from userWebhooks where id = webhookId
-      const { db } = await import('../db/index.js');
       const { userWebhooks } = await import('../db/schema.js');
       const { eq } = await import('drizzle-orm');
       const { decrypt } = await import('../utils/encryption.js');
@@ -380,8 +378,8 @@ export const webhookDeliveryService = {
         events: row.events.split(',').filter(Boolean) as WebhookEventName[],
       };
 
-      // Suppress unused variable warning (rows was fetched then replaced)
-      void rows;
+      // Suppress unused variable warning? No, rows was removed entirely.
+
     } catch (err: unknown) {
       logger.error('Failed to load webhook for retry delivery', {
         webhookId,

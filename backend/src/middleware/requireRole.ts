@@ -13,7 +13,6 @@
 
 import type { Context, Next } from 'hono';
 import { ApiError } from '../utils/errors.js';
-import { db } from '../db/index.js';
 import { teamMembers } from '../db/schema.js';
 import { and, eq } from 'drizzle-orm';
 import type { AppEnv } from '../types/honoContext.js';
@@ -46,6 +45,7 @@ export function requireRole(
 ): (c: Context<AppEnv>, next: Next) => Promise<void> {
   return async (c, next) => {
     const userId = c.get('userId');
+    const db = c.get('db');
 
     if (!userId) {
       // Programming error — requireRole composed without requireAuth

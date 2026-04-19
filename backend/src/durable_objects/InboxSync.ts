@@ -29,7 +29,6 @@
  */
 
 import { createLogger } from '../utils/logger.js';
-import { db } from '../db/index.js';
 import { channels, conversations, messages } from '../db/schema.js';
 import { and, asc, eq, gt } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
@@ -212,6 +211,14 @@ export class InboxSync {
     const log = createLogger({ requestId });
     const attachment = ws.deserializeAttachment() as WsAttachment | null;
     const conversationId = attachment?.conversationId ?? null;
+
+    if (!this.env.HYPERDRIVE) {
+      log.error('HYPERDRIVE binding missing in InboxSync');
+      return;
+    }
+
+    const { createDb } = await import('../db/index.js');
+    const db = createDb(this.env.HYPERDRIVE.connectionString);
 
     const [channel] = await db
       .select({ id: channels.id })

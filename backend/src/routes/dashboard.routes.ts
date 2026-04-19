@@ -1,16 +1,24 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { createLogger } from '../utils/logger.js';
-import { db } from '../db/index.js';
+import { type DrizzleDb } from '../db/index.js';
 import { messages, conversations, channels, teamMembers } from '../db/schema.js';
-import { eq, desc, sql } from 'drizzle-orm';
+import { eq, desc, sql, and } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
 
-type Variables = { requestId: string; userId: string; userEmail: string; teamId: string };
+type Variables = { requestId: string; userId: string; userEmail: string; teamId: string; db: DrizzleDb };
 
 const dashboardRouter = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>();
 
 dashboardRouter.use('*', requireAuth);
+dashboardRouter.use('*', async (c, next) => {
+  // If db isn't set by the parent app, initialize it locally
+  if (!c.get('db') && c.env?.HYPERDRIVE) {
+    const { createDb } = await import('../db/index.js');
+    c.set('db', createDb(c.env.HYPERDRIVE.connectionString));
+  }
+  await next();
+});
 
 // ---------------------------------------------------------------------------
 // GET /api/dashboard/stats — aggregate metrics for the dashboard
@@ -42,88 +50,111 @@ const statsRoute = createRoute({
 });
 
 dashboardRouter.openapi(statsRoute, async (c) => {
+  const db = c.get('db');
   const log = createLogger({ requestId: c.get('requestId') });
   const userId = c.get('userId');
 
+  /**
+   * Helper to execute a query with an individual timeout.
+   * Ensures one slow query doesn't sink the entire dashboard.
+   */
+  const withTimeout = async <T>(promise: Promise<T>, label: string): Promise<T | null> => {
+    const timeoutPromise = new Promise<null>((resolve) =>
+      setTimeout(() => {
+        log.warn(`Query timed out: ${label}`);
+        resolve(null);
+      }, 12000)
+    );
+    return Promise.race([promise, timeoutPromise]);
+  };
+
   try {
-    // Consolidated stats query — executing everything in a single database round-trip
-    // to reduce overhead and connection drop risk in Staging.
-    const result = await db.select({
-      numbersCount: sql<number>`(
-        SELECT cast(count(*) as integer)
-        FROM "channels"
-        INNER JOIN "team_members" ON "team_members"."team_id" = "channels"."team_id"
-        WHERE "team_members"."user_id" = ${userId}
-      )`,
-      conversationsCount: sql<number>`(
-        SELECT cast(count(*) as integer)
-        FROM "conversations"
-        INNER JOIN "channels" ON "channels"."id" = "conversations"."channel_id"
-        INNER JOIN "team_members" ON "team_members"."team_id" = "channels"."team_id"
-        WHERE "team_members"."user_id" = ${userId}
-      )`,
-      activeConversationsCount: sql<number>`(
-        SELECT cast(count(*) as integer)
-        FROM "conversations"
-        INNER JOIN "channels" ON "channels"."id" = "conversations"."channel_id"
-        INNER JOIN "team_members" ON "team_members"."team_id" = "channels"."team_id"
-        WHERE "team_members"."user_id" = ${userId} AND "conversations"."is_window_open" = true
-      )`,
-      totalMessages: sql<number>`(
-        SELECT cast(count(*) as integer)
-        FROM "messages"
-        INNER JOIN "conversations" ON "conversations"."id" = "messages"."conversation_id"
-        INNER JOIN "channels" ON "channels"."id" = "conversations"."channel_id"
-        INNER JOIN "team_members" ON "team_members"."team_id" = "channels"."team_id"
-        WHERE "team_members"."user_id" = ${userId}
-      )`,
-      inboundCount: sql<number>`(
-        SELECT cast(count(*) as integer)
-        FROM "messages"
-        INNER JOIN "conversations" ON "conversations"."id" = "messages"."conversation_id"
-        INNER JOIN "channels" ON "channels"."id" = "conversations"."channel_id"
-        INNER JOIN "team_members" ON "team_members"."team_id" = "channels"."team_id"
-        WHERE "team_members"."user_id" = ${userId} AND "messages"."direction" = 'incoming'
-      )`,
-      outboundCount: sql<number>`(
-        SELECT cast(count(*) as integer)
-        FROM "messages"
-        INNER JOIN "conversations" ON "conversations"."id" = "messages"."conversation_id"
-        INNER JOIN "channels" ON "channels"."id" = "conversations"."channel_id"
-        INNER JOIN "team_members" ON "team_members"."team_id" = "channels"."team_id"
-        WHERE "team_members"."user_id" = ${userId} AND "messages"."direction" = 'outgoing'
-      )`,
-    }).from(sql`(SELECT 1) as dual`);
+    log.info('Fetching dashboard stats in parallel...');
+
+    // Execute all counters in parallel to minimize total latency
+    const results = await Promise.allSettled([
+      withTimeout(
+        db
+          .select({ count: sql<number>`cast(count(*) as integer)` })
+          .from(channels)
+          .innerJoin(teamMembers, eq(teamMembers.teamId, channels.teamId))
+          .where(eq(teamMembers.userId, userId)),
+        'numbersCount'
+      ),
+      withTimeout(
+        db
+          .select({ count: sql<number>`cast(count(*) as integer)` })
+          .from(conversations)
+          .innerJoin(channels, eq(channels.id, conversations.channelId))
+          .innerJoin(teamMembers, eq(teamMembers.teamId, channels.teamId))
+          .where(eq(teamMembers.userId, userId)),
+        'conversationsCount'
+      ),
+      withTimeout(
+        db
+          .select({
+            count: sql<number>`cast(count(*) as integer)`,
+          })
+          .from(conversations)
+          .innerJoin(channels, eq(channels.id, conversations.channelId))
+          .innerJoin(teamMembers, eq(teamMembers.teamId, channels.teamId))
+          .where(and(eq(teamMembers.userId, userId), eq(conversations.isWindowOpen, true))),
+        'activeConversationsCount'
+      ),
+      withTimeout(
+        db
+          .select({
+            total: sql<number>`cast(count(*) as integer)`,
+            inbound: sql<number>`cast(count(case when ${messages.direction} = 'incoming' then 1 end) as integer)`,
+            outbound: sql<number>`cast(count(case when ${messages.direction} = 'outgoing' then 1 end) as integer)`,
+          })
+          .from(messages)
+          .innerJoin(conversations, eq(conversations.id, messages.conversationId))
+          .innerJoin(channels, eq(channels.id, conversations.channelId))
+          .innerJoin(teamMembers, eq(teamMembers.teamId, channels.teamId))
+          .where(eq(teamMembers.userId, userId)),
+        'messageStats'
+      ),
+    ]);
+
+    // Extract values with safe fallbacks for failures or timeouts
+    const [numbersRes, convsRes, activeConvsRes, messageStatsRes] = results;
 
     const stats = {
-      numbersCount: result[0]?.numbersCount ?? 0,
-      conversationsCount: result[0]?.conversationsCount ?? 0,
-      activeConversationsCount: result[0]?.activeConversationsCount ?? 0,
-      messagesCount: result[0]?.totalMessages ?? 0,
-      inboundCount: result[0]?.inboundCount ?? 0,
-      outboundCount: result[0]?.outboundCount ?? 0,
+      numbersCount: (numbersRes.status === 'fulfilled' ? numbersRes.value?.[0]?.count : 0) ?? 0,
+      conversationsCount: (convsRes.status === 'fulfilled' ? convsRes.value?.[0]?.count : 0) ?? 0,
+      activeConversationsCount:
+        (activeConvsRes.status === 'fulfilled' ? activeConvsRes.value?.[0]?.count : 0) ?? 0,
+      messagesCount:
+        (messageStatsRes.status === 'fulfilled' ? messageStatsRes.value?.[0]?.total : 0) ?? 0,
+      inboundCount:
+        (messageStatsRes.status === 'fulfilled' ? messageStatsRes.value?.[0]?.inbound : 0) ?? 0,
+      outboundCount:
+        (messageStatsRes.status === 'fulfilled' ? messageStatsRes.value?.[0]?.outbound : 0) ?? 0,
     };
 
     log.info('Dashboard stats served', { userId, stats });
     return c.json({ success: true, stats }, 200);
   } catch (err) {
-    log.error('Failed to fetch dashboard stats; returning fallback zeros', {
+    log.error('Critical failure in dashboard stats', {
       userId,
       error: err instanceof Error ? err.message : String(err),
     });
-    
-    // Return zeros so the frontend doesn't crash on DB hiccups
-    return c.json({
-      success: true,
-      stats: {
-        numbersCount: 0,
-        messagesCount: 0,
-        inboundCount: 0,
-        outboundCount: 0,
-        conversationsCount: 0,
-        activeConversationsCount: 0,
-      }
-    }, 200);
+
+    return c.json(
+      {
+        success: true,
+        stats: {
+          numbersCount: 0,
+          messagesCount: 0,
+          inboundCount: 0,
+          outboundCount: 0,
+          conversationsCount: 0,
+          activeConversationsCount: 0,
+        },
+      },
+      200
+    );
   }
 });
 
@@ -158,6 +189,7 @@ const recentMessagesRoute = createRoute({
 });
 
 dashboardRouter.openapi(recentMessagesRoute, async (c) => {
+  const db = c.get('db');
   const log = createLogger({ requestId: c.get('requestId') });
   const userId = c.get('userId');
 

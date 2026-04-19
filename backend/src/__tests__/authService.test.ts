@@ -1,14 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { authService } from '../services/authService.js';
-import { db } from '../db/index.js';
-
-vi.mock('../db/index.js', () => ({
-  db: {
-    select: vi.fn(),
-    insert: vi.fn(),
-    update: vi.fn(),
-  },
-}));
 
 // Mock fetch globally — authService calls Meta Graph API
 const mockFetch = vi.fn();
@@ -16,6 +7,13 @@ vi.stubGlobal('fetch', mockFetch);
 
 /** Valid 64-char hex key for AES-256-GCM encryption in tests */
 const TEST_ENCRYPTION_KEY = 'a'.repeat(64);
+
+// Mock DB
+const db = {
+  select: vi.fn(),
+  insert: vi.fn(),
+  update: vi.fn(),
+} as any;
 
 describe('Auth Service — Token Exchange', () => {
   beforeEach(() => {
@@ -44,13 +42,13 @@ describe('Auth Service — Token Exchange', () => {
     mockFetch.mockResolvedValueOnce({ ok: true });
 
     const selectChain = { from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) };
-    vi.mocked(db.select).mockReturnValue(selectChain as never);
+    vi.mocked(db.select).mockReturnValue(selectChain as any);
 
     const insertChain = { values: vi.fn().mockResolvedValue([{ id: 1 }]) };
-    vi.mocked(db.insert).mockReturnValue(insertChain as never);
+    vi.mocked(db.insert).mockReturnValue(insertChain as any);
 
     const result = await authService.exchangeToken(
-      'code123', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY
+      db, 'code123', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY
     );
 
     expect(mockFetch).toHaveBeenCalledTimes(5);
@@ -84,13 +82,13 @@ describe('Auth Service — Token Exchange', () => {
     mockFetch.mockResolvedValueOnce({ ok: true });
 
     const selectChain = { from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([{ id: 5, teamId: 1 }]) }) }) };
-    vi.mocked(db.select).mockReturnValue(selectChain as never);
+    vi.mocked(db.select).mockReturnValue(selectChain as any);
 
     const updateChain = { set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) };
-    vi.mocked(db.update).mockReturnValue(updateChain as never);
+    vi.mocked(db.update).mockReturnValue(updateChain as any);
 
     const result = await authService.exchangeToken(
-      'code456', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY
+      db, 'code456', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY
     );
 
     expect(result).toEqual({ success: true });
@@ -105,7 +103,7 @@ describe('Auth Service — Token Exchange', () => {
     });
 
     await expect(
-      authService.exchangeToken('bad_code', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY)
+      authService.exchangeToken(db, 'bad_code', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY)
     ).rejects.toMatchObject({ statusCode: 502, code: 'META_TOKEN_EXCHANGE_FAILED' });
   });
 
@@ -116,7 +114,7 @@ describe('Auth Service — Token Exchange', () => {
     });
 
     await expect(
-      authService.exchangeToken('code789', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY)
+      authService.exchangeToken(db, 'code789', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY)
     ).rejects.toMatchObject({ statusCode: 502, code: 'META_MISSING_ACCESS_TOKEN' });
   });
 
@@ -142,10 +140,10 @@ describe('Auth Service — Token Exchange', () => {
     mockFetch.mockResolvedValueOnce({ ok: true });
 
     const selectChain = { from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([{ id: 5, teamId: 99 }]) }) }) };
-    vi.mocked(db.select).mockReturnValue(selectChain as never);
+    vi.mocked(db.select).mockReturnValue(selectChain as any);
 
     await expect(
-      authService.exchangeToken('code999', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY)
+      authService.exchangeToken(db, 'code999', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY)
     ).rejects.toMatchObject({ statusCode: 409, code: 'CHANNEL_TEAM_MISMATCH' });
   });
 

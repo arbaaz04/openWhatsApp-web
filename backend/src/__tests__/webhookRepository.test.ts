@@ -2,31 +2,23 @@
  * @file webhookRepository.test.ts
  *
  * Unit tests for the webhookRepository. All DB calls are mocked — no
- * real database is needed. Encryption is exercised via the real Web Crypto
- * implementation (available in the Vitest environment).
- *
- * Mock strategy: instead of building Drizzle-style fluent chains, we mock
- * `db.select`, `db.insert`, `db.update`, `db.delete` as objects that
- * defer their chain resolution to the final call. Each test case sets up
- * exactly what the repository code calls.
+ * real database is needed.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { webhookRepository } from '../repositories/webhookRepository.js';
-import { db } from '../db/index.js';
 
 // ---------------------------------------------------------------------------
 // Mock the DB layer
 // ---------------------------------------------------------------------------
 
-vi.mock('../db/index.js', () => ({
-  db: {
-    select: vi.fn(),
-    insert: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-  },
-}));
+const db = {
+  select: vi.fn(),
+  insert: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+  transaction: vi.fn(),
+} as any;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -96,16 +88,17 @@ describe('webhookRepository.create', () => {
   it('creates a webhook and returns the row with masked secret', async () => {
     // 1st select: channel ownership check → found, same team
     vi.mocked(db.select)
-      .mockReturnValueOnce(makeSelectChain([{ teamId: 10 }]) as never)
+      .mockReturnValueOnce(makeSelectChain([{ teamId: 10 }]) as any)
       // 2nd select: meta uniqueness (not called for whatflow kind, but may be called — return empty)
-      .mockReturnValue(makeSelectChain([]) as never);
+      .mockReturnValue(makeSelectChain([]) as any);
 
     const row = fakeRow();
     vi.mocked(db.insert).mockReturnValue({
       values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([row]) }),
-    } as never);
+    } as any);
 
     const result = await webhookRepository.create(
+      db,
       {
         teamId: 10,
         channelId: 5,
@@ -126,6 +119,7 @@ describe('webhookRepository.create', () => {
   it('throws 422 for a non-HTTPS URL', async () => {
     await expect(
       webhookRepository.create(
+        db,
         { teamId: 1, kind: 'whatflow-web', url: 'http://insecure.com/hook', secret: 'x'.repeat(16) },
         HEX_KEY
       )
@@ -135,6 +129,7 @@ describe('webhookRepository.create', () => {
   it('throws 422 for a totally invalid URL', async () => {
     await expect(
       webhookRepository.create(
+        db,
         { teamId: 1, kind: 'whatflow-web', url: 'not-a-url', secret: 'x'.repeat(16) },
         HEX_KEY
       )
@@ -142,10 +137,11 @@ describe('webhookRepository.create', () => {
   });
 
   it('throws 404 when channelId does not exist', async () => {
-    vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([]) as never);
+    vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([]) as any);
 
     await expect(
       webhookRepository.create(
+        db,
         { teamId: 1, channelId: 999, kind: 'whatflow-web', url: 'https://ex.com', secret: 'x'.repeat(16) },
         HEX_KEY
       )
@@ -154,10 +150,11 @@ describe('webhookRepository.create', () => {
 
   it('throws 403 when channel belongs to a different team', async () => {
     // Channel found but its teamId (99) != requesting teamId (1)
-    vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([{ teamId: 99 }]) as never);
+    vi.mocked(db.select).mockReturnValueOnce(makeSelectChain([{ teamId: 99 }]) as any);
 
     await expect(
       webhookRepository.create(
+        db,
         { teamId: 1, channelId: 5, kind: 'whatflow-web', url: 'https://ex.com', secret: 'x'.repeat(16) },
         HEX_KEY
       )
@@ -166,11 +163,12 @@ describe('webhookRepository.create', () => {
 
   it('throws 409 when a meta webhook already exists for the channel', async () => {
     vi.mocked(db.select)
-      .mockReturnValueOnce(makeSelectChain([{ teamId: 10 }]) as never)  // channel OK
-      .mockReturnValueOnce(makeSelectChain([{ id: 42 }]) as never);     // existing meta webhook
+      .mockReturnValueOnce(makeSelectChain([{ teamId: 10 }]) as any)  // channel OK
+      .mockReturnValueOnce(makeSelectChain([{ id: 42 }]) as any);     // existing meta webhook
 
     await expect(
       webhookRepository.create(
+        db,
         { teamId: 10, channelId: 5, kind: 'meta', url: 'https://ex.com', secret: 'x'.repeat(16) },
         HEX_KEY
       )
@@ -182,9 +180,10 @@ describe('webhookRepository.create', () => {
     const row = fakeRow({ channelId: null });
     vi.mocked(db.insert).mockReturnValue({
       values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([row]) }),
-    } as never);
+    } as any);
 
     const result = await webhookRepository.create(
+      db,
       { teamId: 10, kind: 'whatflow-web', url: 'https://ex.com', secret: 'mysecret123456789', events: [] },
       HEX_KEY
     );
@@ -199,9 +198,9 @@ describe('webhookRepository.listByTeam', () => {
 
   it('returns rows with masked secrets', async () => {
     const rows = [fakeRow({ id: 1 }), fakeRow({ id: 2 })];
-    vi.mocked(db.select).mockReturnValue(makeSelectChain(rows) as never);
+    vi.mocked(db.select).mockReturnValue(makeSelectChain(rows) as any);
 
-    const result = await webhookRepository.listByTeam(10);
+    const result = await webhookRepository.listByTeam(db, 10);
 
     expect(result).toHaveLength(2);
     result.forEach((r) => expect(r.secret).toBe('***'));
@@ -213,17 +212,17 @@ describe('webhookRepository.listByTeam', () => {
     const orderByFn = vi.fn().mockReturnValue({ limit: limitFn });
     const whereFn = vi.fn().mockReturnValue({ orderBy: orderByFn, limit: limitFn });
     const fromFn = vi.fn().mockReturnValue({ where: whereFn, orderBy: orderByFn });
-    vi.mocked(db.select).mockReturnValue({ from: fromFn } as never);
+    vi.mocked(db.select).mockReturnValue({ from: fromFn } as any);
 
-    await webhookRepository.listByTeam(10, 500);
+    await webhookRepository.listByTeam(db, 10, 500);
 
     expect(limitFn).toHaveBeenCalledWith(100);
   });
 
   it('returns empty array when no webhooks exist', async () => {
-    vi.mocked(db.select).mockReturnValue(makeSelectChain([]) as never);
+    vi.mocked(db.select).mockReturnValue(makeSelectChain([]) as any);
 
-    const result = await webhookRepository.listByTeam(10);
+    const result = await webhookRepository.listByTeam(db, 10);
     expect(result).toHaveLength(0);
   });
 });
@@ -232,9 +231,9 @@ describe('webhookRepository.getById', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('returns the row when found and owned by team', async () => {
-    vi.mocked(db.select).mockReturnValue(makeSelectChain([fakeRow()]) as never);
+    vi.mocked(db.select).mockReturnValue(makeSelectChain([fakeRow()]) as any);
 
-    const result = await webhookRepository.getById(1, 10);
+    const result = await webhookRepository.getById(db, 1, 10);
 
     expect(result.id).toBe(1);
     expect(result.secret).toBe('***');
@@ -242,9 +241,9 @@ describe('webhookRepository.getById', () => {
   });
 
   it('throws 404 when not found', async () => {
-    vi.mocked(db.select).mockReturnValue(makeSelectChain([]) as never);
+    vi.mocked(db.select).mockReturnValue(makeSelectChain([]) as any);
 
-    await expect(webhookRepository.getById(999, 10)).rejects.toMatchObject({
+    await expect(webhookRepository.getById(db, 999, 10)).rejects.toMatchObject({
       statusCode: 404,
       code: 'NOT_FOUND',
     });
@@ -261,18 +260,18 @@ describe('webhookRepository.listActiveByChannel', () => {
     const row = fakeRow({ encryptedSecret: encrypted });
 
     // listActiveByChannel: db.select().from().where()  — where() is the terminal async call
-    vi.mocked(db.select).mockReturnValue(makeSelectChainDirect([row]) as never);
+    vi.mocked(db.select).mockReturnValue(makeSelectChainDirect([row]) as any);
 
-    const results = await webhookRepository.listActiveByChannel(5, HEX_KEY);
+    const results = await webhookRepository.listActiveByChannel(db, 5, HEX_KEY);
 
     expect(results).toHaveLength(1);
     expect(results[0].secret).toBe(realSecret);
   });
 
   it('returns empty array when there are no active webhooks', async () => {
-    vi.mocked(db.select).mockReturnValue(makeSelectChainDirect([]) as never);
+    vi.mocked(db.select).mockReturnValue(makeSelectChainDirect([]) as any);
 
-    const results = await webhookRepository.listActiveByChannel(5, HEX_KEY);
+    const results = await webhookRepository.listActiveByChannel(db, 5, HEX_KEY);
     expect(results).toHaveLength(0);
   });
 });
@@ -285,9 +284,9 @@ describe('webhookRepository.update', () => {
     const returningFn = vi.fn().mockResolvedValue([updated]);
     const whereFn = vi.fn().mockReturnValue({ returning: returningFn });
     const setFn = vi.fn().mockReturnValue({ where: whereFn });
-    vi.mocked(db.update).mockReturnValue({ set: setFn } as never);
+    vi.mocked(db.update).mockReturnValue({ set: setFn } as any);
 
-    const result = await webhookRepository.update(1, 10, { url: 'https://new.example.com/hook' }, HEX_KEY);
+    const result = await webhookRepository.update(db, 1, 10, { url: 'https://new.example.com/hook' }, HEX_KEY);
 
     expect(result.url).toBe('https://new.example.com/hook');
     expect(result.secret).toBe('***');
@@ -298,9 +297,9 @@ describe('webhookRepository.update', () => {
     const returningFn = vi.fn().mockResolvedValue([updated]);
     const whereFn = vi.fn().mockReturnValue({ returning: returningFn });
     const setFn = vi.fn().mockReturnValue({ where: whereFn });
-    vi.mocked(db.update).mockReturnValue({ set: setFn } as never);
+    vi.mocked(db.update).mockReturnValue({ set: setFn } as any);
 
-    const result = await webhookRepository.update(1, 10, { isActive: false }, HEX_KEY);
+    const result = await webhookRepository.update(db, 1, 10, { isActive: false }, HEX_KEY);
     expect(result.isActive).toBe(false);
   });
 
@@ -308,9 +307,9 @@ describe('webhookRepository.update', () => {
     const returningFn = vi.fn().mockResolvedValue([]);
     const whereFn = vi.fn().mockReturnValue({ returning: returningFn });
     const setFn = vi.fn().mockReturnValue({ where: whereFn });
-    vi.mocked(db.update).mockReturnValue({ set: setFn } as never);
+    vi.mocked(db.update).mockReturnValue({ set: setFn } as any);
 
-    await expect(webhookRepository.update(999, 10, { isActive: false }, HEX_KEY)).rejects.toMatchObject({
+    await expect(webhookRepository.update(db, 999, 10, { isActive: false }, HEX_KEY)).rejects.toMatchObject({
       statusCode: 404,
       code: 'NOT_FOUND',
     });
@@ -318,7 +317,7 @@ describe('webhookRepository.update', () => {
 
   it('throws 422 when updated URL is not HTTPS', async () => {
     await expect(
-      webhookRepository.update(1, 10, { url: 'http://insecure.com' }, HEX_KEY)
+      webhookRepository.update(db, 1, 10, { url: 'http://insecure.com' }, HEX_KEY)
     ).rejects.toMatchObject({ statusCode: 422, code: 'INVALID_WEBHOOK_URL' });
   });
 
@@ -327,9 +326,9 @@ describe('webhookRepository.update', () => {
     const returningFn = vi.fn().mockResolvedValue([updated]);
     const whereFn = vi.fn().mockReturnValue({ returning: returningFn });
     const setFn = vi.fn().mockReturnValue({ where: whereFn });
-    vi.mocked(db.update).mockReturnValue({ set: setFn } as never);
+    vi.mocked(db.update).mockReturnValue({ set: setFn } as any);
 
-    await webhookRepository.update(1, 10, { secret: 'new-secret-value-abc123' }, HEX_KEY);
+    await webhookRepository.update(db, 1, 10, { secret: 'new-secret-value-abc123' }, HEX_KEY);
 
     // Verify the set was called with an encryptedSecret field (should contain a colon separator from AES format)
     const setCallArg = setFn.mock.calls[0][0] as Record<string, unknown>;
@@ -345,17 +344,17 @@ describe('webhookRepository.delete', () => {
   it('deletes successfully when found', async () => {
     const returningFn = vi.fn().mockResolvedValue([{ id: 1 }]);
     const whereFn = vi.fn().mockReturnValue({ returning: returningFn });
-    vi.mocked(db.delete).mockReturnValue({ where: whereFn } as never);
+    vi.mocked(db.delete).mockReturnValue({ where: whereFn } as any);
 
-    await expect(webhookRepository.delete(1, 10)).resolves.toBeUndefined();
+    await expect(webhookRepository.delete(db, 1, 10)).resolves.toBeUndefined();
   });
 
   it('throws 404 when not found or not owned by team', async () => {
     const returningFn = vi.fn().mockResolvedValue([]);
     const whereFn = vi.fn().mockReturnValue({ returning: returningFn });
-    vi.mocked(db.delete).mockReturnValue({ where: whereFn } as never);
+    vi.mocked(db.delete).mockReturnValue({ where: whereFn } as any);
 
-    await expect(webhookRepository.delete(999, 10)).rejects.toMatchObject({
+    await expect(webhookRepository.delete(db, 999, 10)).rejects.toMatchObject({
       statusCode: 404,
       code: 'NOT_FOUND',
     });
@@ -367,23 +366,23 @@ describe('webhookRepository.countByTeam', () => {
 
   it('returns the numeric count', async () => {
     // countByTeam: db.select().from().where()  — where() resolves directly
-    vi.mocked(db.select).mockReturnValue(makeSelectChainDirect([{ total: 7 }]) as never);
+    vi.mocked(db.select).mockReturnValue(makeSelectChainDirect([{ total: 7 }]) as any);
 
-    const total = await webhookRepository.countByTeam(10);
+    const total = await webhookRepository.countByTeam(db, 10);
     expect(total).toBe(7);
   });
 
   it('returns 0 when no webhooks exist', async () => {
-    vi.mocked(db.select).mockReturnValue(makeSelectChainDirect([{ total: 0 }]) as never);
+    vi.mocked(db.select).mockReturnValue(makeSelectChainDirect([{ total: 0 }]) as any);
 
-    const total = await webhookRepository.countByTeam(10);
+    const total = await webhookRepository.countByTeam(db, 10);
     expect(total).toBe(0);
   });
 
   it('returns 0 when query returns empty', async () => {
-    vi.mocked(db.select).mockReturnValue(makeSelectChainDirect([]) as never);
+    vi.mocked(db.select).mockReturnValue(makeSelectChainDirect([]) as any);
 
-    const total = await webhookRepository.countByTeam(10);
+    const total = await webhookRepository.countByTeam(db, 10);
     expect(total).toBe(0);
   });
 });

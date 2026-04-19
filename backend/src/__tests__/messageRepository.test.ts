@@ -1,22 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { messageRepository } from '../repositories/messageRepository.js';
-import { db } from '../db/index.js';
 
-vi.mock('../db/index.js', () => ({
-  db: {
-    select: vi.fn(),
-    insert: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-    transaction: vi.fn(),
-  },
-}));
+// Mock DB
+const db = {
+  select: vi.fn(),
+  insert: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+  transaction: vi.fn(),
+} as any;
 
 // ---------------------------------------------------------------------------
 // Drizzle fluent query chain helper
 // Builds a mock that supports .from().where().limit() / .orderBy().limit() etc.
 // ---------------------------------------------------------------------------
-function makeSelectChain(result: unknown[]): ReturnType<typeof vi.fn> {
+function makeSelectChain(result: unknown[]): any {
   const chain = {
     from: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
@@ -27,7 +25,7 @@ function makeSelectChain(result: unknown[]): ReturnType<typeof vi.fn> {
   return vi.fn().mockReturnValue(chain);
 }
 
-function makeInsertChain(result: unknown[] = []): ReturnType<typeof vi.fn> {
+function makeInsertChain(result: unknown[] = []): any {
   const chain = {
     values: vi.fn().mockReturnThis(),
     returning: vi.fn().mockResolvedValue(result),
@@ -36,7 +34,7 @@ function makeInsertChain(result: unknown[] = []): ReturnType<typeof vi.fn> {
   return vi.fn().mockReturnValue(chain);
 }
 
-function makeUpdateChain(): ReturnType<typeof vi.fn> {
+function makeUpdateChain(): any {
   const chain = {
     set: vi.fn().mockReturnThis(),
     where: vi.fn().mockResolvedValue([]),
@@ -70,9 +68,9 @@ describe('messageRepository.listMessages', () => {
       orderBy: vi.fn().mockReturnThis(),
       limit: vi.fn().mockResolvedValue(fakeMessages),
     };
-    vi.mocked(db.select).mockReturnValue(selectChain as never);
+    vi.mocked(db.select).mockReturnValue(selectChain as any);
 
-    const result = await messageRepository.listMessages(1);
+    const result = await messageRepository.listMessages(db, 1);
 
     expect(result.items.length).toBe(3);
     expect(result.hasMore).toBe(false);
@@ -97,9 +95,9 @@ describe('messageRepository.listMessages', () => {
       orderBy: vi.fn().mockReturnThis(),
       limit: vi.fn().mockResolvedValue(extra),
     };
-    vi.mocked(db.select).mockReturnValue(selectChain as never);
+    vi.mocked(db.select).mockReturnValue(selectChain as any);
 
-    const result = await messageRepository.listMessages(1);
+    const result = await messageRepository.listMessages(db, 1);
 
     expect(result.hasMore).toBe(true);
     expect(result.items.length).toBe(50); // extra row trimmed
@@ -112,9 +110,9 @@ describe('messageRepository.listMessages', () => {
       orderBy: vi.fn().mockReturnThis(),
       limit: vi.fn().mockResolvedValue([]),
     };
-    vi.mocked(db.select).mockReturnValue(selectChain as never);
+    vi.mocked(db.select).mockReturnValue(selectChain as any);
 
-    await messageRepository.listMessages(1, { limit: 9999 });
+    await messageRepository.listMessages(db, 1, { limit: 9999 });
 
     // Should be capped at 200 + 1 = 201
     expect(selectChain.limit).toHaveBeenCalledWith(201);
@@ -150,10 +148,10 @@ describe('messageRepository.processIncomingMessage', () => {
       update: vi.fn(),
     };
 
-    vi.mocked(db.transaction).mockImplementation(async (callback) => callback(tx as never));
+    vi.mocked(db.transaction).mockImplementation(async (callback: any) => callback(tx as any));
 
     const result = await messageRepository.processIncomingMessage(
-      'phone1', '+1234567890', 'Hello', 'ext-msg-001'
+      db, 'phone1', '+1234567890', 'Hello', 'ext-msg-001'
     );
 
     expect(result.conversationId).toBe(99);
@@ -168,12 +166,12 @@ describe('messageRepository.processIncomingMessage', () => {
         from: vi.fn().mockReturnThis(),
         where: vi.fn().mockReturnThis(),
         limit: vi.fn().mockResolvedValue([{ id: 10, whatsappId: 'phone1' }]),
-      } as never)
+      } as any)
       .mockReturnValueOnce({
         from: vi.fn().mockReturnThis(),
         where: vi.fn().mockReturnThis(),
         limit: vi.fn().mockResolvedValue([{ id: 55 }]),
-      } as never),
+      } as any),
       update: vi.fn().mockReturnValue({
         set: vi.fn().mockReturnThis(),
         where: vi.fn().mockResolvedValue([]),
@@ -186,10 +184,10 @@ describe('messageRepository.processIncomingMessage', () => {
       }),
     };
 
-    vi.mocked(db.transaction).mockImplementation(async (callback) => callback(tx as never));
+    vi.mocked(db.transaction).mockImplementation(async (callback: any) => callback(tx as any));
 
     const result = await messageRepository.processIncomingMessage(
-      'phone1', '+1234567890', 'Hi again'
+      db, 'phone1', '+1234567890', 'Hi again'
     );
 
     expect(result.conversationId).toBe(55);

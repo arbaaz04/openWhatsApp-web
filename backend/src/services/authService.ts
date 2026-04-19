@@ -1,7 +1,7 @@
 import { logger } from '../utils/logger.js';
 import { ApiError } from '../utils/errors.js';
 import { encrypt, decrypt } from '../utils/encryption.js';
-import { db } from '../db/index.js';
+import { type DrizzleDb } from '../db/index.js';
 import { channels } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
@@ -192,6 +192,7 @@ export const authService = {
    * @throws {ApiError 500}   If database persistence fails
    */
   async exchangeToken(
+    db: DrizzleDb,
     code: string,
     teamId: number,
     clientId: string,

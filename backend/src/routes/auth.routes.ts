@@ -3,15 +3,23 @@ import { ApiError } from '../utils/errors.js';
 import { createLogger } from '../utils/logger.js';
 import { rateLimiter } from '../utils/rateLimiter.js';
 import { requireAuth } from '../middleware/requireAuth.js';
-import { db } from '../db/index.js';
+import { type DrizzleDb } from '../db/index.js';
 import { teamMembers } from '../db/schema.js';
 import { and, eq } from 'drizzle-orm';
 import { authService } from '../services/authService.js';
 import type { WorkerBindings } from '../types/bindings.js';
 
-type Variables = { requestId: string; userId: string; userEmail: string };
+type Variables = { requestId: string; userId: string; userEmail: string; db: DrizzleDb };
 
 const authRouter = new OpenAPIHono<{ Bindings: WorkerBindings; Variables: Variables }>();
+
+authRouter.use('*', async (c, next) => {
+  if (!c.get('db') && c.env?.HYPERDRIVE) {
+    const { createDb } = await import('../db/index.js');
+    c.set('db', createDb(c.env.HYPERDRIVE.connectionString));
+  }
+  await next();
+});
 
 /**
  * Validates the embedded signup callback body from the WhatsApp Embedded Signup flow.
@@ -54,6 +62,7 @@ authRouter.use('/embedded-signup', requireAuth);
 authRouter.use('/embedded-signup', rateLimiter(20));
 
 authRouter.openapi(embeddedSignupRoute, async (c) => {
+  const db = c.get('db');
   const log = createLogger({ requestId: c.get('requestId') });
   const userId = c.get('userId');
   const { code, teamId, wabaId, phoneNumberId } = c.req.valid('json');
@@ -82,6 +91,7 @@ authRouter.openapi(embeddedSignupRoute, async (c) => {
 
   // Exchange token using provided WABA & phone number IDs (no auto-discovery needed)
   await authService.exchangeToken(
+    db,
     code,
     teamId,
     clientId,

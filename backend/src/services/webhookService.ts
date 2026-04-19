@@ -1,6 +1,5 @@
-import { messageRepository } from '../repositories/messageRepository.js';
-import { webhookDeliveryService } from './webhookDeliveryService.js';
 import { logger } from '../utils/logger.js';
+import { type DrizzleDb } from '../db/index.js';
 import type { MetaWebhookPayload } from '../types/webhook.types.js';
 import type { WorkerBindings } from '../types/bindings.js';
 
@@ -18,9 +17,12 @@ import type { WorkerBindings } from '../types/bindings.js';
  */
 export const webhookService = {
   async processPayload(
+    db: DrizzleDb,
     payload: MetaWebhookPayload,
     env?: WorkerBindings
   ): Promise<void> {
+    const { messageRepository } = await import('../repositories/messageRepository.js');
+    const { webhookDeliveryService } = await import('./webhookDeliveryService.js');
     for (const entry of payload.entry) {
       for (const change of entry.changes) {
         if (change.field !== 'messages') continue;
@@ -51,6 +53,7 @@ export const webhookService = {
 
           try {
             const { messageId, conversationId } = await messageRepository.processIncomingMessage(
+              db,
               phoneNumberId,
               customerPhone,
               bodyText,
@@ -83,7 +86,6 @@ export const webhookService = {
             // If DATA_ENCRYPTION_KEY is not available (e.g. test env) we skip.
             if (env?.DATA_ENCRYPTION_KEY && conversationId) {
               try {
-                const { db } = await import('../db/index.js');
                 const { conversations } = await import('../db/schema.js');
                 const { eq } = await import('drizzle-orm');
 
@@ -110,6 +112,8 @@ export const webhookService = {
                     },
                     rawMetaPayload: payload,
                     encryptionKey: env.DATA_ENCRYPTION_KEY,
+                    db,
+                    env,
                   });
                 }
               } catch (err: unknown) {

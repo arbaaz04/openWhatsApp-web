@@ -2,14 +2,22 @@ import { Hono } from 'hono';
 import { createLogger } from '../utils/logger.js';
 import { ApiError } from '../utils/errors.js';
 import { requireAuth } from '../middleware/requireAuth.js';
-import { db } from '../db/index.js';
+import { type DrizzleDb } from '../db/index.js';
 import { channels, teamMembers } from '../db/schema.js';
 import { and, eq } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
 
-type Variables = { requestId: string; userId: string; userEmail: string };
+type Variables = { requestId: string; userId: string; userEmail: string; db: DrizzleDb };
 
 const wsRouter = new Hono<{ Bindings: WorkerBindings; Variables: Variables }>();
+
+wsRouter.use('*', async (c, next) => {
+  if (!c.get('db') && c.env?.HYPERDRIVE) {
+    const { createDb } = await import('../db/index.js');
+    c.set('db', createDb(c.env.HYPERDRIVE.connectionString));
+  }
+  await next();
+});
 
 wsRouter.use('/inbox', requireAuth);
 
@@ -69,6 +77,7 @@ wsRouter.get('/inbox', async (c) => {
 
   // Authorize inbox access: caller must be a member of the team
   // that owns the channel represented by phoneNumberId.
+  const db = c.get('db');
   const [channelAccess] = await db
     .select({ channelId: channels.id })
     .from(channels)

@@ -14,7 +14,7 @@
  * (routes / services) pull it from the Worker environment and pass it in.
  */
 
-import { db } from '../db/index.js';
+import { type DrizzleDb } from '../db/index.js';
 import { userWebhooks, channels } from '../db/schema.js';
 import { eq, and, count } from 'drizzle-orm';
 import { ApiError } from '../utils/errors.js';
@@ -134,7 +134,7 @@ export const webhookRepository = {
    * @param hexKey     - `DATA_ENCRYPTION_KEY` from Worker bindings
    * @returns The created row (secret masked)
    */
-  async create(input: CreateWebhookInput, hexKey: string): Promise<WebhookRow> {
+  async create(db: DrizzleDb, input: CreateWebhookInput, hexKey: string): Promise<WebhookRow> {
     assertHttpsUrl(input.url);
 
     const {
@@ -205,7 +205,7 @@ export const webhookRepository = {
    * @param teamId - The team whose webhooks to list
    * @param limit  - Max rows to return (default 50, hard-capped at 100)
    */
-  async listByTeam(teamId: number, limit = 50): Promise<WebhookRow[]> {
+  async listByTeam(db: DrizzleDb, teamId: number, limit = 50): Promise<WebhookRow[]> {
     const cap = Math.min(limit, 100);
     const rows = await db
       .select()
@@ -221,7 +221,7 @@ export const webhookRepository = {
    * Returns a single webhook by ID, enforcing team ownership.
    * @throws {ApiError} 404 if not found or not owned by the team
    */
-  async getById(id: number, teamId: number): Promise<WebhookRow> {
+  async getById(db: DrizzleDb, id: number, teamId: number): Promise<WebhookRow> {
     const [row] = await db
       .select()
       .from(userWebhooks)
@@ -246,6 +246,7 @@ export const webhookRepository = {
    * @param hexKey     - `DATA_ENCRYPTION_KEY` from Worker bindings
    */
   async listActiveByChannel(
+    db: DrizzleDb,
     channelId: number,
     hexKey: string
   ): Promise<Array<Omit<WebhookRow, 'secret'> & { secret: string }>> {
@@ -269,6 +270,7 @@ export const webhookRepository = {
    * @throws {ApiError} 404 if not found or not owned by the team
    */
   async update(
+    db: DrizzleDb,
     id: number,
     teamId: number,
     patch: UpdateWebhookInput,
@@ -306,7 +308,7 @@ export const webhookRepository = {
    * Hard-deletes a webhook, verifying team ownership first.
    * @throws {ApiError} 404 if not found or not owned by the team
    */
-  async delete(id: number, teamId: number): Promise<void> {
+  async delete(db: DrizzleDb, id: number, teamId: number): Promise<void> {
     const [deleted] = await db
       .delete(userWebhooks)
       .where(and(eq(userWebhooks.id, id), eq(userWebhooks.teamId, teamId)))
@@ -321,7 +323,7 @@ export const webhookRepository = {
    * Returns the total number of webhooks registered for a team.
    * Used for display / limit enforcement.
    */
-  async countByTeam(teamId: number): Promise<number> {
+  async countByTeam(db: DrizzleDb, teamId: number): Promise<number> {
     const [row] = await db
       .select({ total: count() })
       .from(userWebhooks)

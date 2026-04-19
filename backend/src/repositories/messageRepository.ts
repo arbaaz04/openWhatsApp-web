@@ -1,4 +1,4 @@
-import { db } from '../db/index.js';
+import { type DrizzleDb } from '../db/index.js';
 import { channels, conversations, messages } from '../db/schema.js';
 import { eq, and, lt, desc, gt, asc } from 'drizzle-orm';
 import { ApiError } from '../utils/errors.js';
@@ -12,7 +12,6 @@ const REPLAY_PAGE_SIZE = 500;
 
 /**
  * A single message row returned from the repository.
- * Uses a mapped type so consumers don't import Drizzle internals.
  */
 export interface MessageRow {
   id: number;
@@ -27,25 +26,17 @@ export interface MessageRow {
 
 export const messageRepository = {
   /**
-   * Processes an incoming WhatsApp message end-to-end:
-   * 1. Resolves the channel by phone_number_id
-   * 2. Finds or creates a conversation scoped to (channel_id + customer_number)
-   * 3. Refreshes the 24-hour service window timestamp
-   * 4. Persists the message record
-   *
-   * @param phoneNumberId - The receiving phone number ID from Meta webhook metadata
-   * @param customerNumber - The sender's WhatsApp number (E.164 format)
-   * @param body - Decoded message body text
-   * @param externalId - The WhatsApp message ID for idempotency (deduplication)
+   * Processes an incoming WhatsApp message end-to-end.
    */
   async processIncomingMessage(
+    db: DrizzleDb,
     phoneNumberId: string,
     customerNumber: string,
     body: string,
     externalId?: string
   ): Promise<{ messageId: number; conversationId: number }> {
     return db.transaction(async (tx) => {
-      // 1. Resolve Channel — fail fast if not registered
+      // 1. Resolve Channel
       const [channel] = await tx
         .select({ id: channels.id })
         .from(channels)
@@ -60,9 +51,7 @@ export const messageRepository = {
         );
       }
 
-      // 2. Resolve Conversation scoped by both channel AND customer.
-      //    Without channelId scope, two channels receiving the same customer number
-      //    would incorrectly share a conversation record.
+      // 2. Resolve Conversation
       const [existing] = await tx
         .select({ id: conversations.id })
         .from(conversations)
@@ -77,7 +66,6 @@ export const messageRepository = {
       let conversationId: number;
 
       if (!existing) {
-        // First message from this customer on this channel — create conversation
         const [insertedConversation] = await tx
           .insert(conversations)
           .values({
@@ -91,17 +79,13 @@ export const messageRepository = {
         conversationId = insertedConversation.id;
       } else {
         conversationId = existing.id;
-
-        // 3. Refresh 24-hour service window — always update on inbound message
         await tx
           .update(conversations)
           .set({ lastCustomerMessageAt: new Date(), isWindowOpen: true })
           .where(eq(conversations.id, conversationId));
       }
 
-      // 4. Persist the message record.
-      //    externalId enables idempotency: the UNIQUE constraint on messages.external_id
-      //    means duplicate webhook deliveries are silently ignored at the DB level.
+      // 4. Persist the message record
       const [insertedMessage] = await tx
         .insert(messages)
         .values({
@@ -111,14 +95,13 @@ export const messageRepository = {
           status: 'delivered' as const,
           externalId: externalId ?? null,
         })
-        .onConflictDoNothing() // duplicate externalId → skip silently
+        .onConflictDoNothing()
         .returning({ id: messages.id });
 
       if (insertedMessage?.id) {
         return { messageId: insertedMessage.id, conversationId };
       }
 
-      // Duplicate webhook delivery path: resolve the already persisted row.
       if (externalId) {
         const [existingMessage] = await tx
           .select({ id: messages.id })
@@ -137,29 +120,9 @@ export const messageRepository = {
 
   /**
    * Cursor-based pagination for messages within a conversation.
-   *
-   * Uses keyset pagination on `(id DESC)` rather than OFFSET so performance
-   * stays O(log n) regardless of how many messages exist in the conversation.
-   * Clients request the next page by passing the smallest `id` from
-   * the previous page as the `before` cursor.
-   *
-   * @param conversationId - Conversation to query
-   * @param options.before - Exclusive upper bound on message ID (cursor).
-   *   Omit for the first page (returns the most recent messages).
-   * @param options.limit - Number of messages to return (default: 50, max: 200)
-   * @returns Messages in descending chronological order (newest first).
-   *   The frontend should reverse this array before rendering.
-   *   `hasMore` indicates whether an earlier page exists.
-   *
-   * @example
-   * // First page — most recent 50 messages
-   * const { items } = await messageRepository.listMessages(42);
-   *
-   * // Next page — 50 messages before the oldest one we have
-   * const oldest = items[items.length - 1];
-   * const { items: older } = await messageRepository.listMessages(42, { before: oldest.id });
    */
   async listMessages(
+    db: DrizzleDb,
     conversationId: number,
     options: { before?: number; limit?: number } = {}
   ): Promise<{ items: MessageRow[]; hasMore: boolean }> {
@@ -170,8 +133,6 @@ export const messageRepository = {
       conditions.push(lt(messages.id, options.before));
     }
 
-    // Fetch one extra row to determine if there's a previous page without a
-    // second COUNT(*) query.
     const rows = await db
       .select()
       .from(messages)
@@ -190,18 +151,9 @@ export const messageRepository = {
 
   /**
    * Persists a successfully sent outbound message.
-   *
-   * Called AFTER the Meta API confirms delivery (we have the `wamid`).
-   * Storing the wamid as `externalId` means incoming status webhook updates
-   * (delivered/read) can be correlated back to this row via a single indexed lookup.
-   *
-   * @param conversationId - The conversation this message belongs to
-   * @param body           - The message body text that was sent
-   * @param wamid          - The WhatsApp message ID returned by Meta
-   * @param sentBy         - Supabase user ID of the agent who sent the message
-   * @returns The persisted message row ID
    */
   async createOutboundMessage(
+    db: DrizzleDb,
     conversationId: number,
     body: string,
     wamid: string,
@@ -224,17 +176,9 @@ export const messageRepository = {
 
   /**
    * Fetches all messages after a given ID for WebSocket reconnect replay.
-   * Called by InboxSync when a client reconnects with `lastSeenMessageId`.
-   *
-   * Uses `id > afterMessageId` (not createdAt) — serial IDs are monotonically
-   * increasing and immune to clock skew on the Postgres server.
-   *
-   * @param conversationId - Conversation to replay
-   * @param afterMessageId - Exclusive lower bound — the client already has this message
-   * @returns A bounded page in ascending order (oldest first) for playback,
-   *   plus `hasMore` / `nextCursor` for follow-up replay requests.
    */
   async getMessagesSince(
+    db: DrizzleDb,
     conversationId: number,
     afterMessageId: number,
     options: { limit?: number } = {}
@@ -251,7 +195,7 @@ export const messageRepository = {
         )
       )
       .orderBy(asc(messages.id))
-      .limit(limit + 1); // fetch one extra row to determine hasMore
+      .limit(limit + 1);
 
     const hasMore = rows.length > limit;
     const items = (hasMore ? rows.slice(0, limit) : rows) as MessageRow[];
