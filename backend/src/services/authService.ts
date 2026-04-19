@@ -97,7 +97,7 @@ async function fetchPhoneNumberInfo(wabaId: string, accessToken: string): Promis
  * Fetches the display phone number for a specific phone number ID.
  */
 async function fetchSinglePhoneInfo(phoneNumberId: string, accessToken: string): Promise<string> {
-  const url = `https://graph.facebook.com/v25.0/${phoneNumberId}?access_token=${accessToken}`;
+  const url = `https://graph.facebook.com/v25.0/${phoneNumberId}?fields=display_phone_number&access_token=${accessToken}`;
   const res = await fetch(url);
   if (!res.ok) throw new ApiError(502, 'Failed to fetch display phone number from Meta', 'META_PHONE_FETCH_FAILED');
   

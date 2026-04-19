@@ -63,8 +63,12 @@ export async function cors(
     return;
   }
 
-  await next();
-
-  c.res.headers.set('Access-Control-Allow-Origin', allowWildcard ? '*' : origin);
-  Object.entries(CORS_HEADERS).forEach(([k, v]) => c.res.headers.set(k, v));
+  try {
+    await next();
+  } finally {
+    if (c.res) {
+      c.res.headers.set('Access-Control-Allow-Origin', allowWildcard ? '*' : origin);
+      Object.entries(CORS_HEADERS).forEach(([k, v]) => c.res.headers.set(k, v));
+    }
+  }
 }
