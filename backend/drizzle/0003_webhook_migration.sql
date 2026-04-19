@@ -11,7 +11,7 @@ DO $$ BEGIN
     END IF;
 END $$;
 
--- 2. Create missing Table safely (heals the gap in migration history)
+-- 2. Create missing Table safely
 CREATE TABLE IF NOT EXISTS "user_webhooks" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"team_id" integer NOT NULL,
@@ -31,14 +31,13 @@ CREATE TABLE IF NOT EXISTS "user_webhooks" (
 CREATE INDEX IF NOT EXISTS "user_webhooks_team_id_idx" ON "user_webhooks" USING btree ("team_id");
 CREATE INDEX IF NOT EXISTS "user_webhooks_channel_id_idx" ON "user_webhooks" USING btree ("channel_id");
 
--- 4. Heal missing columns in other tables (handling potential gaps in 0001/0002)
+-- 4. Heal missing columns
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='sent_by') THEN
         ALTER TABLE "messages" ADD COLUMN "sent_by" text;
         ALTER TABLE "messages" ADD CONSTRAINT "messages_sent_by_users_id_fk" FOREIGN KEY ("sent_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
     END IF;
     
-    -- Ensure channel_status is applied correctly
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='channels' AND column_name='status' AND data_type='character varying') THEN
         ALTER TABLE "channels" ALTER COLUMN "status" SET DATA TYPE "public"."channel_status" USING "status"::"public"."channel_status";
         ALTER TABLE "channels" ALTER COLUMN "status" SET DEFAULT 'active'::"public"."channel_status";
@@ -46,12 +45,32 @@ DO $$ BEGIN
     END IF;
 END $$;
 
--- 5. Perform the Rename (Safe multi-step process)
--- Add the new value 'whatflow-web' to the enum
-ALTER TYPE "public"."webhook_kind" ADD VALUE IF NOT EXISTS 'whatflow-web';
+-- 5. PERFORM THE RENAME (Transaction-safe RECREATION strategy)
+-- Step 5a: Create a temporary type with the correct values
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'webhook_kind_new') THEN
+        CREATE TYPE "public"."webhook_kind_new" AS ENUM('whatflow-web', 'meta');
+    END IF;
+END $$;
 
--- Update the data
-UPDATE "user_webhooks" SET "kind" = 'whatflow-web' WHERE "kind" = 'whatflow';
+-- Step 5b: Update the column to use the temporary type
+-- We cast to text first to ensure compatibility during the transition
+ALTER TABLE "user_webhooks" ALTER COLUMN "kind" DROP DEFAULT;
+ALTER TABLE "user_webhooks" ALTER COLUMN "kind" SET DATA TYPE "public"."webhook_kind_new" USING (
+    CASE 
+        WHEN "kind"::text = 'whatflow' THEN 'whatflow-web'::"public"."webhook_kind_new"
+        ELSE "kind"::text::"public"."webhook_kind_new"
+    END
+);
 
--- Update the default value for new rows
+-- Step 5c: Clean up the old type and rename the new one
+-- Note: We only do this if the old type still exists and is named 'webhook_kind'
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'webhook_kind') AND EXISTS (SELECT 1 FROM pg_type WHERE typname = 'webhook_kind_new') THEN
+        DROP TYPE "public"."webhook_kind";
+        ALTER TYPE "public"."webhook_kind_new" RENAME TO "webhook_kind";
+    END IF;
+END $$;
+
+-- Step 5d: Restore the default value
 ALTER TABLE "user_webhooks" ALTER COLUMN "kind" SET DEFAULT 'whatflow-web';
