@@ -418,6 +418,30 @@ conversationRouter.openapi(sendMessageRoute, async (c) => {
     );
   }
 
+  // 6. Dispatch `conversation.message.sent` to user-registered webhooks.
+  //    Fire-and-forget via waitUntil so it never blocks the HTTP response.
+  if (c.env.DATA_ENCRYPTION_KEY) {
+    const { webhookDeliveryService } = await import('../services/webhookDeliveryService.js');
+    c.executionCtx?.waitUntil(
+      webhookDeliveryService.dispatchEvent({
+        eventName: 'conversation.message.sent',
+        channelId: row.channelId,
+        eventData: {
+          conversationId,
+          messageId,
+          channelId: row.channelId,
+          customerNumber: row.customerNumber,
+          body,
+          direction: 'outgoing',
+          wamid,
+          timestamp: new Date().toISOString(),
+        },
+        encryptionKey: c.env.DATA_ENCRYPTION_KEY,
+        env: { USER_WEBHOOK_QUEUE: c.env.USER_WEBHOOK_QUEUE },
+      })
+    );
+  }
+
   return c.json({ success: true as const, messageId, wamid }, 201);
 });
 

@@ -34,14 +34,14 @@ const VALID_EVENTS = [
   'conversation.window.closed',
 ] as const;
 
-const WebhookKindSchema = z.enum(['whatflow', 'meta']).default('whatflow');
+const WebhookKindSchema = z.enum(['whatflow-web', 'meta']).default('whatflow-web');
 const WebhookEventsSchema = z.array(z.enum(VALID_EVENTS)).default([]);
 
 const WebhookRowSchema = z.object({
   id: z.number(),
   teamId: z.number(),
   channelId: z.number().nullable(),
-  kind: z.enum(['whatflow', 'meta']),
+  kind: z.enum(['whatflow-web', 'meta']),
   url: z.string(),
   secret: z.literal('***'),
   events: z.array(z.string()),

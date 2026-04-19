@@ -8,11 +8,16 @@
  * Production values are set via `wrangler secret put` or the CF dashboard.
  * Local dev values go in `.dev.vars` (gitignored).
  */
-import type { MetaWebhookPayload } from './webhook.types.js';
+import type { MetaWebhookPayload, UserWebhookJob } from './webhook.types.js';
 
 export interface WorkerBindings {
   /** Queue for asynchronous Meta webhook processing */
   WEBHOOK_QUEUE: Queue<MetaWebhookPayload>;
+  /**
+   * Queue for user-registered outbound webhook delivery with retry policy.
+   * Jobs are enqueued on delivery failure and retried with exponential backoff.
+   */
+  USER_WEBHOOK_QUEUE: Queue<UserWebhookJob>;
   /** Optional environment flag (e.g., 'local', 'production') */
   ENVIRONMENT?: string;
   /**

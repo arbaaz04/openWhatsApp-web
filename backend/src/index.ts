@@ -197,13 +197,16 @@ export { InboxSync } from './durable_objects/InboxSync.js';
 
 export default {
   fetch: app.fetch,
-  
+
   /**
-   * Cloudflare Queue consumer for async processing (e.g. Meta webhooks).
-   * Webhooks are fast-acked on the HTTP layer and handled robustly here.
+   * Cloudflare Queue consumer — unified handler for both queues.
+   *
+   * Routes by queue name:
+   * - `whatflow-web-webhooks[-dev]`      → incoming Meta webhook payloads
+   * - `whatflow-web-user-webhooks[-dev]` → user webhook retry jobs
    */
   async queue(
-    batch: MessageBatch<MetaWebhookPayload>,
+    batch: MessageBatch,
     env: WorkerBindings,
     _ctx: ExecutionContext
   ): Promise<void> {
@@ -211,9 +214,33 @@ export default {
       setDb(createDb(env.HYPERDRIVE.connectionString));
     }
 
+    const queueName: string = (batch as MessageBatch & { queue: string }).queue ?? '';
+
+    // ── User webhook retry queue ──────────────────────────────────────────
+    if (queueName.includes('user-webhooks')) {
+      const { webhookDeliveryService } = await import('./services/webhookDeliveryService.js');
+
+      for (const message of (batch as MessageBatch<import('./types/webhook.types.js').UserWebhookJob>).messages) {
+        try {
+          await webhookDeliveryService.deliverFromQueue(message.body, env);
+          message.ack();
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          logger.error('User webhook retry job failed — will retry via DLQ', {
+            error: errorMessage,
+            webhookId: message.body.webhookId,
+            attempt: message.body.attempt,
+          });
+          message.retry();
+        }
+      }
+      return;
+    }
+
+    // ── Incoming Meta webhook queue ───────────────────────────────────────
     const { webhookService } = await import('./services/webhookService.js');
 
-    for (const message of batch.messages) {
+    for (const message of (batch as MessageBatch<MetaWebhookPayload>).messages) {
       try {
         await webhookService.processPayload(message.body, env);
         message.ack();

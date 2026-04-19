@@ -114,3 +114,51 @@ export interface WhatflowWebhookEnvelope {
   timestamp: string; // ISO-8601
   data: MessageEventData | WindowEventData;
 }
+
+/**
+ * Batched envelope — sent when multiple events accumulate within the batch window.
+ * Receivers MUST check for `events` array (batch) vs. individual event fields.
+ */
+export interface WhatflowBatchEnvelope {
+  version: 'v1';
+  /** Total number of events in this batch */
+  batchSize: number;
+  events: WhatflowWebhookEnvelope[];
+}
+
+// ---------------------------------------------------------------------------
+// Queue job types — for the USER_WEBHOOK_QUEUE retry mechanism
+// ---------------------------------------------------------------------------
+
+/**
+ * A job enqueued in `USER_WEBHOOK_QUEUE` for async delivery / retry.
+ *
+ * On first failure, attempt=1 is enqueued. The queue consumer tries delivery
+ * and re-enqueues with attempt++ on failure. After MAX_DELIVERY_ATTEMPTS the
+ * queue's native DLQ catches it.
+ */
+export interface UserWebhookJob {
+  /** ID of the user_webhooks row — used to look up URL + secret + kind */
+  webhookId: number;
+  /** AES-256-GCM encryption key — needed to decrypt the stored secret */
+  encryptionKey: string;
+  /** Event name that triggered this delivery */
+  eventName: WebhookEventName;
+  /** Typed event payload */
+  eventData: MessageEventData | WindowEventData;
+  /**
+   * Raw Meta payload — forwarded verbatim for `meta`-kind webhooks.
+   * Null for non-Meta-triggered events.
+   */
+  rawMetaPayload?: unknown;
+  /**
+   * Which attempt this is (1-indexed).
+   * attempt=1 = first retry (delivery already failed once in dispatchEvent).
+   */
+  attempt: number;
+  /**
+   * Pre-computed idempotencyKey from the original delivery attempt.
+   * Preserved across retries so the receiver can deduplicate correctly.
+   */
+  idempotencyKey: string;
+}

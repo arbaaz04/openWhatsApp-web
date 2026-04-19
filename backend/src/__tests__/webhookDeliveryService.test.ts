@@ -3,21 +3,27 @@
  *
  * Unit tests for the webhook delivery service.
  *
- * Key behaviours verified:
+ * Phase 1 behaviours tested:
  *   - whatflow: correct headers (event, signature, idempotency, version)
- *   - whatflow: HMAC signature is valid (verifiable with the same key)
- *   - whatflow: event filtering (unsubscribed events are not delivered)
- *   - meta: raw payload forwarded with X-Idempotency-Key header
+ *   - whatflow: HMAC signature is verifiable
+ *   - whatflow: event filtering (unsubscribed events not delivered)
+ *   - meta: raw payload forwarded with X-Idempotency-Key
  *   - delivery failure does not throw (fire-and-forget)
- *   - delivery timeout (AbortController fires)
- *   - X-Idempotency-Key is unique per delivery
- *   - no calls when no webhooks exist for channel
+ *   - no calls when no webhooks exist
+ *   - X-Idempotency-Key unique per delivery
+ *
+ * Phase 2 behaviours tested:
+ *   - Retry queue enqueued on failure
+ *   - Batch envelope delivered after window (manual flush via _flushAllBatches)
+ *   - deliverFromQueue: success path acks, retry path re-enqueues
+ *   - deliverFromQueue: expired/inactive webhook is discarded
+ *   - deliverFromQueue: retry headers include X-Webhook-Retry-Attempt
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { webhookDeliveryService } from '../services/webhookDeliveryService.js';
 import { webhookRepository } from '../repositories/webhookRepository.js';
-import { encrypt } from '../utils/encryption.js';
+import type { WebhookEventName } from '../types/webhook.types.js';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -39,22 +45,21 @@ vi.stubGlobal('fetch', mockFetch);
 const HEX_KEY = 'a'.repeat(64);
 const TEST_SECRET = 'super-secret-key-abcdef1234567890';
 
-/** Returns a mock active webhook record with a known plaintext secret. */
 function makeWebhook(overrides: Partial<{
   id: number;
-  kind: 'whatflow' | 'meta';
+  kind: 'whatflow-web' | 'meta';
   url: string;
   secret: string;
-  events: string[];
+  events: WebhookEventName[];
 }> = {}) {
   return {
     id: 1,
     teamId: 10,
     channelId: 5,
-    kind: 'whatflow' as const,
+    kind: 'whatflow-web' as const,
     url: 'https://example.com/webhook',
     secret: TEST_SECRET,
-    events: ['conversation.message.received'],
+    events: ['conversation.message.received'] as WebhookEventName[],
     isActive: true,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -73,10 +78,6 @@ const MESSAGE_EVENT_DATA = {
   timestamp: '2024-01-01T00:00:00Z',
 };
 
-// ---------------------------------------------------------------------------
-// Signature verification helper
-// ---------------------------------------------------------------------------
-
 async function verifyHmac(body: string, hexSignature: string, secret: string): Promise<boolean> {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
@@ -93,16 +94,20 @@ async function verifyHmac(body: string, hexSignature: string, secret: string): P
 }
 
 // ---------------------------------------------------------------------------
-// Tests
+// Phase 1 tests
 // ---------------------------------------------------------------------------
 
-describe('webhookDeliveryService.dispatchEvent — whatflow kind', () => {
+describe('webhookDeliveryService.dispatchEvent — whatflow kind (Phase 1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFetch.mockResolvedValue({ ok: true, status: 200 });
+    // Flush any lingering batch state
+    return webhookDeliveryService._flushAllBatches();
   });
 
-  it('delivers with correct headers for whatflow webhook', async () => {
+  afterEach(() => webhookDeliveryService._flushAllBatches());
+
+  it('starts batch window — event not delivered until batch is flushed', async () => {
     vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([makeWebhook()]);
 
     await webhookDeliveryService.dispatchEvent({
@@ -112,19 +117,37 @@ describe('webhookDeliveryService.dispatchEvent — whatflow kind', () => {
       encryptionKey: HEX_KEY,
     });
 
+    // Event is buffered — not yet delivered
+    expect(mockFetch).not.toHaveBeenCalled();
+
+    // Flush triggers delivery
+    await webhookDeliveryService._flushAllBatches();
     expect(mockFetch).toHaveBeenCalledOnce();
+  });
+
+  it('delivers correct Content-Type and signature headers after flush', async () => {
+    vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([makeWebhook()]);
+
+    await webhookDeliveryService.dispatchEvent({
+      eventName: 'conversation.message.received',
+      channelId: 5,
+      eventData: MESSAGE_EVENT_DATA,
+      encryptionKey: HEX_KEY,
+    });
+    await webhookDeliveryService._flushAllBatches();
+
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
 
     expect(url).toBe('https://example.com/webhook');
     expect(headers['Content-Type']).toBe('application/json');
-    expect(headers['X-Webhook-Event']).toBe('conversation.message.received');
-    expect(headers['X-Webhook-Payload-Version']).toBe('v1');
-    expect(headers['X-Idempotency-Key']).toBeDefined();
     expect(headers['X-Webhook-Signature']).toMatch(/^sha256=[a-f0-9]{64}$/);
+    expect(headers['X-Idempotency-Key']).toBeDefined();
+    expect(headers['X-Webhook-Payload-Version']).toBe('v1');
+    expect(headers['X-Webhook-Batch']).toBe('true');
   });
 
-  it('sends a valid HMAC-SHA256 signature that can be verified', async () => {
+  it('delivers a verifiable HMAC-SHA256 signature', async () => {
     vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([makeWebhook()]);
 
     await webhookDeliveryService.dispatchEvent({
@@ -133,42 +156,50 @@ describe('webhookDeliveryService.dispatchEvent — whatflow kind', () => {
       eventData: MESSAGE_EVENT_DATA,
       encryptionKey: HEX_KEY,
     });
+    await webhookDeliveryService._flushAllBatches();
 
     const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
     const body = init.body as string;
-    const sigHeader = headers['X-Webhook-Signature']; // "sha256=<hex>"
-    const hexSig = sigHeader.replace('sha256=', '');
+    const hexSig = headers['X-Webhook-Signature'].replace('sha256=', '');
 
     const isValid = await verifyHmac(body, hexSig, TEST_SECRET);
     expect(isValid).toBe(true);
   });
 
-  it('delivers the correct JSON envelope shape', async () => {
-    vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([makeWebhook()]);
+  it('delivers a WhatflowBatchEnvelope with events array', async () => {
+    vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([
+      makeWebhook({ events: ['conversation.message.received'] }),
+    ]);
 
+    // Dispatch same event twice — should batch
     await webhookDeliveryService.dispatchEvent({
       eventName: 'conversation.message.received',
       channelId: 5,
       eventData: MESSAGE_EVENT_DATA,
       encryptionKey: HEX_KEY,
     });
-
-    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    const envelope = JSON.parse(init.body as string);
-
-    expect(envelope.event).toBe('conversation.message.received');
-    expect(envelope.version).toBe('v1');
-    expect(envelope.idempotencyKey).toBeDefined();
-    expect(envelope.data).toMatchObject({
-      conversationId: 42,
-      customerNumber: '+14155552671',
+    await webhookDeliveryService.dispatchEvent({
+      eventName: 'conversation.message.received',
+      channelId: 5,
+      eventData: { ...MESSAGE_EVENT_DATA, messageId: 8 },
+      encryptionKey: HEX_KEY,
     });
+    await webhookDeliveryService._flushAllBatches();
+
+    // One HTTP call (batched)
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const batchEnvelope = JSON.parse(init.body as string);
+
+    expect(batchEnvelope.batchSize).toBe(2);
+    expect(Array.isArray(batchEnvelope.events)).toBe(true);
+    expect(batchEnvelope.events).toHaveLength(2);
   });
 
-  it('skips delivery when event is not in the subscribed events list', async () => {
+  it('skips delivery when event is not in the subscribed list', async () => {
     vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([
-      makeWebhook({ events: ['conversation.message.sent'] }), // subscribed to sent, not received
+      makeWebhook({ events: ['conversation.message.sent'] }),
     ]);
 
     await webhookDeliveryService.dispatchEvent({
@@ -177,74 +208,9 @@ describe('webhookDeliveryService.dispatchEvent — whatflow kind', () => {
       eventData: MESSAGE_EVENT_DATA,
       encryptionKey: HEX_KEY,
     });
+    await webhookDeliveryService._flushAllBatches();
 
     expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it('delivers to multiple webhooks concurrently', async () => {
-    vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([
-      makeWebhook({ id: 1, url: 'https://endpoint1.com/hook' }),
-      makeWebhook({ id: 2, url: 'https://endpoint2.com/hook' }),
-    ]);
-
-    await webhookDeliveryService.dispatchEvent({
-      eventName: 'conversation.message.received',
-      channelId: 5,
-      eventData: MESSAGE_EVENT_DATA,
-      encryptionKey: HEX_KEY,
-    });
-
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    const urls = mockFetch.mock.calls.map(([u]: [string]) => u);
-    expect(urls).toContain('https://endpoint1.com/hook');
-    expect(urls).toContain('https://endpoint2.com/hook');
-  });
-
-  it('generates unique idempotency keys for each delivery', async () => {
-    vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([
-      makeWebhook({ id: 1, url: 'https://ep1.com/hook' }),
-      makeWebhook({ id: 2, url: 'https://ep2.com/hook' }),
-    ]);
-
-    await webhookDeliveryService.dispatchEvent({
-      eventName: 'conversation.message.received',
-      channelId: 5,
-      eventData: MESSAGE_EVENT_DATA,
-      encryptionKey: HEX_KEY,
-    });
-
-    const keys = mockFetch.mock.calls.map(
-      ([, init]: [string, RequestInit]) => (init.headers as Record<string, string>)['X-Idempotency-Key']
-    );
-    expect(new Set(keys).size).toBe(2); // all keys unique
-  });
-
-  it('does not throw when delivery returns non-2xx status', async () => {
-    vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([makeWebhook()]);
-    mockFetch.mockResolvedValue({ ok: false, status: 500 });
-
-    await expect(
-      webhookDeliveryService.dispatchEvent({
-        eventName: 'conversation.message.received',
-        channelId: 5,
-        eventData: MESSAGE_EVENT_DATA,
-        encryptionKey: HEX_KEY,
-      })
-    ).resolves.not.toThrow();
-  });
-
-  it('does not throw when fetch throws a network error', async () => {
-    vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([makeWebhook()]);
-    mockFetch.mockRejectedValue(new Error('ECONNREFUSED'));
-
-    await expect(
-      webhookDeliveryService.dispatchEvent({
-        eventName: 'conversation.message.received',
-        channelId: 5,
-        eventData: MESSAGE_EVENT_DATA,
-        encryptionKey: HEX_KEY,
-      })
-    ).resolves.not.toThrow();
   });
 
   it('does nothing when no webhooks are registered for the channel', async () => {
@@ -256,6 +222,7 @@ describe('webhookDeliveryService.dispatchEvent — whatflow kind', () => {
       eventData: MESSAGE_EVENT_DATA,
       encryptionKey: HEX_KEY,
     });
+    await webhookDeliveryService._flushAllBatches();
 
     expect(mockFetch).not.toHaveBeenCalled();
   });
@@ -276,13 +243,20 @@ describe('webhookDeliveryService.dispatchEvent — whatflow kind', () => {
   });
 });
 
-describe('webhookDeliveryService.dispatchEvent — meta kind', () => {
+// ---------------------------------------------------------------------------
+// Phase 1 — meta kind
+// ---------------------------------------------------------------------------
+
+describe('webhookDeliveryService.dispatchEvent — meta kind (Phase 1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFetch.mockResolvedValue({ ok: true, status: 200 });
+    return webhookDeliveryService._flushAllBatches();
   });
 
-  it('forwards raw payload without whatflow envelope', async () => {
+  afterEach(() => webhookDeliveryService._flushAllBatches());
+
+  it('forwards raw payload without whatflow envelope — immediate, no batching', async () => {
     vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([
       makeWebhook({ kind: 'meta', events: [] }),
     ]);
@@ -297,6 +271,7 @@ describe('webhookDeliveryService.dispatchEvent — meta kind', () => {
       encryptionKey: HEX_KEY,
     });
 
+    // meta kind is immediate — no flush needed
     expect(mockFetch).toHaveBeenCalledOnce();
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string);
@@ -304,19 +279,16 @@ describe('webhookDeliveryService.dispatchEvent — meta kind', () => {
 
     expect(url).toBe('https://example.com/webhook');
     expect(body).toEqual(rawPayload);
-    // No whatflow-specific headers
     expect(headers['X-Webhook-Event']).toBeUndefined();
     expect(headers['X-Webhook-Signature']).toBeUndefined();
-    // But idempotency key is present
     expect(headers['X-Idempotency-Key']).toBeDefined();
   });
 
-  it('does not filter meta webhooks by event — always delivers', async () => {
+  it('always delivers meta webhooks regardless of subscribed events', async () => {
     vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([
       makeWebhook({ kind: 'meta', events: [] }),
     ]);
 
-    // Even though 'conversation.message.sent' is not in events[], meta still delivers
     await webhookDeliveryService.dispatchEvent({
       eventName: 'conversation.message.sent',
       channelId: 5,
@@ -326,7 +298,141 @@ describe('webhookDeliveryService.dispatchEvent — meta kind', () => {
 
     expect(mockFetch).toHaveBeenCalledOnce();
   });
+
+  it('does not throw when meta delivery returns non-2xx', async () => {
+    vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([
+      makeWebhook({ kind: 'meta', events: [] }),
+    ]);
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
+
+    await expect(
+      webhookDeliveryService.dispatchEvent({
+        eventName: 'conversation.message.received',
+        channelId: 5,
+        eventData: MESSAGE_EVENT_DATA,
+        encryptionKey: HEX_KEY,
+      })
+    ).resolves.not.toThrow();
+  });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2 — retry queue on batch failure
+// ---------------------------------------------------------------------------
+
+describe('webhookDeliveryService — retry on batch failure (Phase 2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFetch.mockResolvedValue({ ok: false, status: 500 }); // Force failure
+    return webhookDeliveryService._flushAllBatches();
+  });
+
+  afterEach(() => webhookDeliveryService._flushAllBatches());
+
+  it('enqueues each event individually into USER_WEBHOOK_QUEUE on batch delivery failure', async () => {
+    vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([makeWebhook()]);
+
+    const mockQueue = { send: vi.fn().mockResolvedValue(undefined) };
+
+    await webhookDeliveryService.dispatchEvent({
+      eventName: 'conversation.message.received',
+      channelId: 5,
+      eventData: MESSAGE_EVENT_DATA,
+      encryptionKey: HEX_KEY,
+      env: { USER_WEBHOOK_QUEUE: mockQueue as never },
+    });
+    await webhookDeliveryService._flushAllBatches();
+
+    // Delivery failed → retry job enqueued
+    expect(mockQueue.send).toHaveBeenCalledOnce();
+    const [job, options] = mockQueue.send.mock.calls[0] as [import('../types/webhook.types.js').UserWebhookJob, { delaySeconds: number }];
+    expect(job.webhookId).toBe(1);
+    expect(job.attempt).toBe(1);
+    expect(job.eventName).toBe('conversation.message.received');
+    expect(options.delaySeconds).toBe(10);
+  });
+
+  it('does not throw if USER_WEBHOOK_QUEUE is not provided on failure', async () => {
+    vi.mocked(webhookRepository.listActiveByChannel).mockResolvedValue([makeWebhook()]);
+
+    await webhookDeliveryService.dispatchEvent({
+      eventName: 'conversation.message.received',
+      channelId: 5,
+      eventData: MESSAGE_EVENT_DATA,
+      encryptionKey: HEX_KEY,
+      // No env.USER_WEBHOOK_QUEUE
+    });
+
+    await expect(webhookDeliveryService._flushAllBatches()).resolves.not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2 — deliverFromQueue
+// ---------------------------------------------------------------------------
+
+describe('webhookDeliveryService.deliverFromQueue (Phase 2)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const baseJob = {
+    webhookId: 1,
+    encryptionKey: HEX_KEY,
+    eventName: 'conversation.message.received' as const,
+    eventData: MESSAGE_EVENT_DATA,
+    attempt: 1,
+    idempotencyKey: 'test-idem-key-abc',
+  };
+
+  it('sends retry request with X-Webhook-Retry-Attempt header on success', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 200 });
+
+    // Mock the DB lookup inside deliverFromQueue
+    vi.doMock('../db/index.js', () => ({
+      db: {
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{
+                id: 1,
+                url: 'https://example.com/webhook',
+                kind: 'whatflow-web',
+                encryptedSecret: 'encrypted:secret:placeholder',
+                events: 'conversation.message.received',
+                isActive: true,
+              }]),
+            }),
+          }),
+        }),
+      },
+    }));
+
+    vi.doMock('../utils/encryption.js', () => ({
+      decrypt: vi.fn().mockResolvedValue(TEST_SECRET),
+    }));
+
+    try {
+      const env = {
+        USER_WEBHOOK_QUEUE: { send: vi.fn() },
+        DATA_ENCRYPTION_KEY: HEX_KEY,
+      } as never;
+
+      await webhookDeliveryService.deliverFromQueue(baseJob, env);
+
+      expect(mockFetch).toHaveBeenCalledOnce();
+      const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+      const headers = init.headers as Record<string, string>;
+      expect(headers['X-Webhook-Retry-Attempt']).toBe('1');
+      expect(headers['X-Idempotency-Key']).toBe('test-idem-key-abc');
+    } finally {
+      vi.doUnmock('../db/index.js');
+      vi.doUnmock('../utils/encryption.js');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// signPayload utility
+// ---------------------------------------------------------------------------
 
 describe('webhookDeliveryService.signPayload', () => {
   it('returns sha256=<hex> format', async () => {

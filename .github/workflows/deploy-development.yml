@@ -100,6 +100,15 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: Check for DB changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            db:
+              - 'backend/src/db/**'
+              - 'backend/drizzle/**'
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -121,6 +130,7 @@ jobs:
           DATA_ENCRYPTION_KEY: ${{ secrets.DATA_ENCRYPTION_KEY }}
           WEBHOOK_VERIFY_TOKEN: ${{ secrets.WEBHOOK_VERIFY_TOKEN }}
           META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+          DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
         run: |
           set -euo pipefail
 
@@ -143,15 +153,29 @@ jobs:
             fi
           done
 
+          if [ "${{ steps.filter.outputs.db }}" == "true" ] && [ -z "${DIRECT_DATABASE_URL:-}" ]; then
+            echo "Changes detected in DB files but DIRECT_DATABASE_URL secret is missing."
+            echo "Please add DIRECT_DATABASE_URL to GitHub Secrets to enable migrations."
+            exit 1
+          fi
+
           npx wrangler whoami >/dev/null
 
           npx wrangler queues list > queues.txt
-          for name in whatflow-webhooks-dev whatflow-webhooks-dlq-dev; do
+          QUEUES="whatflow-web-webhooks-development whatflow-web-webhooks-dlq-development whatflow-web-user-webhooks-development whatflow-web-user-webhooks-dlq-development"
+          for name in $QUEUES; do
             if ! grep -q "$name" queues.txt; then
               echo "Missing required development queue: $name"
               exit 1
             fi
           done
+
+      - name: Apply Database migrations (Development)
+        if: steps.filter.outputs.db == 'true'
+        working-directory: ./backend
+        env:
+          DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
+        run: npm run db:migrate
 
       - name: Sync Runtime Config to Cloudflare (Development)
         working-directory: ./backend

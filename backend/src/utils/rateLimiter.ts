@@ -1,4 +1,4 @@
-import type { Context, Next } from 'hono';
+import type { Context, Env, Next } from 'hono';
 import { ApiError } from './errors.js';
 import type { WorkerBindings } from '../types/bindings.js';
 
@@ -19,8 +19,8 @@ export const rateLimiter = (limit: number = 100) => {
   // LOCAL DEV ONLY — per-isolate, resets on cold start
   const localStore = new Map<string, { count: number; resetAt: number }>();
 
-  return async (
-    c: Context<{ Bindings: WorkerBindings }>,
+  return async <E extends Env & { Bindings: WorkerBindings }>(
+    c: Context<E>,
     next: Next
   ): Promise<void> => {
     const ip =

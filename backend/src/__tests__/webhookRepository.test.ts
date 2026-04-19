@@ -39,7 +39,7 @@ function fakeRow(overrides: Partial<{
   id: number;
   teamId: number;
   channelId: number | null;
-  kind: 'whatflow' | 'meta';
+  kind: 'whatflow-web' | 'meta';
   url: string;
   encryptedSecret: string;
   events: string;
@@ -51,7 +51,7 @@ function fakeRow(overrides: Partial<{
     id: 1,
     teamId: 10,
     channelId: 5,
-    kind: 'whatflow' as const,
+    kind: 'whatflow-web' as const,
     url: 'https://example.com/hook',
     encryptedSecret: 'encrypted:secret',
     events: 'conversation.message.received,conversation.message.sent',
@@ -109,7 +109,7 @@ describe('webhookRepository.create', () => {
       {
         teamId: 10,
         channelId: 5,
-        kind: 'whatflow',
+        kind: 'whatflow-web',
         url: 'https://example.com/hook',
         secret: 'my-secret-key-123',
         events: ['conversation.message.received'],
@@ -119,14 +119,14 @@ describe('webhookRepository.create', () => {
 
     expect(result.secret).toBe('***');
     expect(result.url).toBe('https://example.com/hook');
-    expect(result.kind).toBe('whatflow');
+    expect(result.kind).toBe('whatflow-web');
     expect(db.insert).toHaveBeenCalledOnce();
   });
 
   it('throws 422 for a non-HTTPS URL', async () => {
     await expect(
       webhookRepository.create(
-        { teamId: 1, kind: 'whatflow', url: 'http://insecure.com/hook', secret: 'x'.repeat(16) },
+        { teamId: 1, kind: 'whatflow-web', url: 'http://insecure.com/hook', secret: 'x'.repeat(16) },
         HEX_KEY
       )
     ).rejects.toMatchObject({ statusCode: 422, code: 'INVALID_WEBHOOK_URL' });
@@ -135,7 +135,7 @@ describe('webhookRepository.create', () => {
   it('throws 422 for a totally invalid URL', async () => {
     await expect(
       webhookRepository.create(
-        { teamId: 1, kind: 'whatflow', url: 'not-a-url', secret: 'x'.repeat(16) },
+        { teamId: 1, kind: 'whatflow-web', url: 'not-a-url', secret: 'x'.repeat(16) },
         HEX_KEY
       )
     ).rejects.toMatchObject({ statusCode: 422, code: 'INVALID_WEBHOOK_URL' });
@@ -146,7 +146,7 @@ describe('webhookRepository.create', () => {
 
     await expect(
       webhookRepository.create(
-        { teamId: 1, channelId: 999, kind: 'whatflow', url: 'https://ex.com', secret: 'x'.repeat(16) },
+        { teamId: 1, channelId: 999, kind: 'whatflow-web', url: 'https://ex.com', secret: 'x'.repeat(16) },
         HEX_KEY
       )
     ).rejects.toMatchObject({ statusCode: 404, code: 'NOT_FOUND' });
@@ -158,7 +158,7 @@ describe('webhookRepository.create', () => {
 
     await expect(
       webhookRepository.create(
-        { teamId: 1, channelId: 5, kind: 'whatflow', url: 'https://ex.com', secret: 'x'.repeat(16) },
+        { teamId: 1, channelId: 5, kind: 'whatflow-web', url: 'https://ex.com', secret: 'x'.repeat(16) },
         HEX_KEY
       )
     ).rejects.toMatchObject({ statusCode: 403, code: 'FORBIDDEN' });
@@ -185,7 +185,7 @@ describe('webhookRepository.create', () => {
     } as never);
 
     const result = await webhookRepository.create(
-      { teamId: 10, kind: 'whatflow', url: 'https://ex.com', secret: 'mysecret123456789', events: [] },
+      { teamId: 10, kind: 'whatflow-web', url: 'https://ex.com', secret: 'mysecret123456789', events: [] },
       HEX_KEY
     );
 
@@ -238,7 +238,7 @@ describe('webhookRepository.getById', () => {
 
     expect(result.id).toBe(1);
     expect(result.secret).toBe('***');
-    expect(result.kind).toBe('whatflow');
+    expect(result.kind).toBe('whatflow-web');
   });
 
   it('throws 404 when not found', async () => {

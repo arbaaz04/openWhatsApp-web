@@ -20,7 +20,7 @@ import {
  * - `whatflow` — structured, event-based envelope with HMAC signature
  * - `meta`     — raw Meta payload forwarding with idempotency key
  */
-export const webhookKindEnum = pgEnum('webhook_kind', ['whatflow', 'meta']);
+export const webhookKindEnum = pgEnum('webhook_kind', ['whatflow-web', 'meta']);
 
 /**
  * Subscribable event types for `whatflow`-kind webhooks.
@@ -248,7 +248,7 @@ export const userWebhooks = pgTable(
       .references(() => teams.id, { onDelete: 'cascade' }),
     /** Null = project-level webhook; non-null = scoped to a single channel */
     channelId: integer('channel_id').references(() => channels.id, { onDelete: 'cascade' }),
-    kind: webhookKindEnum('kind').notNull().default('whatflow'),
+    kind: webhookKindEnum('kind').notNull().default('whatflow-web'),
     /** Validated HTTPS endpoint URL */
     url: text('url').notNull(),
     /**

@@ -25,16 +25,27 @@
         "producers": [
           {
             "binding": "WEBHOOK_QUEUE",
-            "queue": "whatflow-webhooks"
+            "queue": "whatflow-web-webhooks-production"
+          },
+          {
+            "binding": "USER_WEBHOOK_QUEUE",
+            "queue": "whatflow-web-user-webhooks-production"
           }
         ],
         "consumers": [
           {
-            "queue": "whatflow-webhooks",
+            "queue": "whatflow-web-webhooks-production",
             "max_batch_size": 20,
             "max_batch_timeout": 1,
             "max_retries": 5,
-            "dead_letter_queue": "whatflow-webhooks-dlq"
+            "dead_letter_queue": "whatflow-web-webhooks-dlq-production"
+          },
+          {
+            "queue": "whatflow-web-user-webhooks-production",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "dead_letter_queue": "whatflow-web-user-webhooks-dlq-production"
           }
         ]
       },
@@ -80,16 +91,27 @@
         "producers": [
           {
             "binding": "WEBHOOK_QUEUE",
-            "queue": "whatflow-webhooks-dev"
+            "queue": "whatflow-web-webhooks-development"
+          },
+          {
+            "binding": "USER_WEBHOOK_QUEUE",
+            "queue": "whatflow-web-user-webhooks-development"
           }
         ],
         "consumers": [
           {
-            "queue": "whatflow-webhooks-dev",
+            "queue": "whatflow-web-webhooks-development",
             "max_batch_size": 20,
             "max_batch_timeout": 1,
             "max_retries": 5,
-            "dead_letter_queue": "whatflow-webhooks-dlq-dev"
+            "dead_letter_queue": "whatflow-web-webhooks-dlq-development"
+          },
+          {
+            "queue": "whatflow-web-user-webhooks-development",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "dead_letter_queue": "whatflow-web-user-webhooks-dlq-development"
           }
         ]
       },
@@ -126,16 +148,27 @@
     "producers": [
       {
         "binding": "WEBHOOK_QUEUE",
-        "queue": "whatflow-webhooks"
+        "queue": "whatflow-web-webhooks-production"
+      },
+      {
+        "binding": "USER_WEBHOOK_QUEUE",
+        "queue": "whatflow-web-user-webhooks-production"
       }
     ],
     "consumers": [
       {
-        "queue": "whatflow-webhooks",
+        "queue": "whatflow-web-webhooks-production",
         "max_batch_size": 20,
         "max_batch_timeout": 1,
         "max_retries": 5,
-        "dead_letter_queue": "whatflow-webhooks-dlq"
+        "dead_letter_queue": "whatflow-web-webhooks-dlq-production"
+      },
+      {
+        "queue": "whatflow-web-user-webhooks-production",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "whatflow-web-user-webhooks-dlq-production"
       }
     ]
   },
