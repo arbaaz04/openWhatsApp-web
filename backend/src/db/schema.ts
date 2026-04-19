@@ -12,7 +12,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 // ---------------------------------------------------------------------------
-// Outbound webhook support (Triggering manual migration run)
+// Webhook enums — added for user-registered outbound webhook support
 // ---------------------------------------------------------------------------
 
 /**

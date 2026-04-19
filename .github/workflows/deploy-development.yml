@@ -175,7 +175,7 @@ jobs:
         working-directory: ./backend
         env:
           DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
-        run: npx tsx src/scripts/migrate.ts
+        run: npm run db:migrate
 
       - name: Sync Runtime Config to Cloudflare (Development)
         working-directory: ./backend
