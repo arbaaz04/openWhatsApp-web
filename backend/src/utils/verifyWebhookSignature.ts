@@ -25,8 +25,8 @@ export async function verifyWebhookSignature(
   rawBody: string,
   signature: string,
   secret: string
-): Promise<boolean> {
-  if (!signature.startsWith('sha256=')) return false;
+): Promise<{ valid: boolean; expectedHex: string }> {
+  if (!signature.startsWith('sha256=')) return { valid: false, expectedHex: '' };
 
   // Meta often sends hex in lowercase, but we should be case-insensitive just in case.
   const receivedHex = signature.slice('sha256='.length).toLowerCase();
@@ -49,12 +49,12 @@ export async function verifyWebhookSignature(
     .join('');
 
   // Constant-time string comparison — prevents timing attacks
-  if (expectedHex.length !== receivedHex.length) return false;
+  if (expectedHex.length !== receivedHex.length) return { valid: false, expectedHex };
 
   let diff = 0;
   for (let i = 0; i < expectedHex.length; i++) {
     diff |= expectedHex.charCodeAt(i) ^ receivedHex.charCodeAt(i);
   }
 
-  return diff === 0;
+  return { valid: diff === 0, expectedHex };
 }

@@ -53,13 +53,15 @@ webhookRouter.use('/', async (c, next) => {
   }
 
   const rawBody = await c.req.text();
-  const valid = await verifyWebhookSignature(rawBody, signature, secret);
+  const { valid, expectedHex } = await verifyWebhookSignature(rawBody, signature, secret);
 
   if (!valid) {
     log.error('Webhook HMAC verification failed', { 
       hasSignature: !!signature,
       signaturePrefix: signature.slice(0, 15),
-      bodyLength: rawBody.length 
+      calculatedPrefix: `sha256=${expectedHex.slice(0, 8)}`,
+      bodyLength: rawBody.length,
+      secretLength: secret.length
     });
     return c.json({ success: false, error: 'Invalid webhook signature' }, 401);
   }
