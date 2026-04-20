@@ -20,6 +20,7 @@ function formatTime(dateStr: string | null) {
 interface Conversation {
   id: number;
   customerNumber: string;
+  whatsappId: string;
   isWindowOpen: boolean;
   lastCustomerMessageAt: string | null;
   createdAt: string;
@@ -87,6 +88,58 @@ export function InboxSidebar() {
 
     fetchData();
   }, [session]);
+
+  // WebSocket for real-time sidebar updates
+  useEffect(() => {
+    if (!session || conversations.length === 0) return;
+
+    // Get unique WhatsApp IDs to connect to
+    const uniqueWhatsappIds = [...new Set(conversations.map(c => c.whatsappId).filter(Boolean))];
+    const sockets: WebSocket[] = [];
+
+    const apiUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8787').replace('http', 'ws');
+
+    uniqueWhatsappIds.forEach(whatsappId => {
+      const socket = new WebSocket(`${apiUrl}/api/ws/inbox?phoneNumberId=${whatsappId}`);
+      
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'incoming' || data.type === 'outgoing') {
+            setConversations(prev => {
+              const next = [...prev];
+              const idx = next.findIndex(c => String(c.id) === String(data.conversationId));
+              
+              if (idx !== -1) {
+                // Update existing conversation
+                next[idx] = {
+                  ...next[idx],
+                  lastCustomerMessageAt: data.timestamp,
+                  isWindowOpen: true
+                };
+                // Move to top
+                const [item] = next.splice(idx, 1);
+                next.unshift(item);
+              } else {
+                // This might be a new conversation started while the user is inside.
+                // We'd ideally fetch the full object, but for now we'll wait for a refresh
+                // or implement a full "new conversation" handler.
+              }
+              return next;
+            });
+          }
+        } catch (e) {
+          console.error('Sidebar WS error:', e);
+        }
+      };
+
+      sockets.push(socket);
+    });
+
+    return () => {
+      sockets.forEach(s => s.close());
+    };
+  }, [session, conversations.length === 0]); // Only reconnect if conversation list was empty and is now filled
 
   return (
     <div className="w-[280px] h-full bg-white border-r border-[#E5E7EB] flex flex-col shrink-0">

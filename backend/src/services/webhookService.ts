@@ -73,6 +73,7 @@ export const webhookService = {
                   body: JSON.stringify({
                     type: 'incoming',
                     messageId,
+                    conversationId,
                     customerPhone,
                     bodyText,
                     timestamp: new Date().toISOString(),

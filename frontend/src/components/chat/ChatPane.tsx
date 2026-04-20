@@ -75,8 +75,9 @@ export function ChatPane() {
     fetchMessages();
   }, [conversationId, session]);
 
-  // Try to find the customer number from the sidebar context or similar. 
-  // For now, we'll just use a placeholder if we can't find it, or we could fetch conversation meta.
+  const [whatsappId, setWhatsappId] = useState<string>('');
+
+  // Try to find the customer number and whatsappId from the sidebar context or similar. 
   useEffect(() => {
      async function fetchConvMeta() {
         if (!session || !conversationId) return;
@@ -87,8 +88,11 @@ export function ChatPane() {
           });
           if (res.ok) {
             const data = await res.json();
-            const conv = data.conversations.find((c: { id: number; customerNumber: string }) => String(c.id) === conversationId);
-            if (conv) setCustomerNumber(conv.customerNumber);
+            const conv = data.conversations.find((c: { id: number; customerNumber: string, whatsappId: string }) => String(c.id) === conversationId);
+            if (conv) {
+              setCustomerNumber(conv.customerNumber);
+              setWhatsappId(conv.whatsappId);
+            }
           }
         } catch (e) {
           console.error(e);
@@ -96,6 +100,48 @@ export function ChatPane() {
      }
      fetchConvMeta();
   }, [conversationId, session]);
+
+  // WebSocket for real-time updates
+  useEffect(() => {
+    if (!session || !whatsappId || !conversationId) return;
+
+    const apiUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8787').replace('http', 'ws');
+    const socket = new WebSocket(`${apiUrl}/api/ws/inbox?phoneNumberId=${whatsappId}&conversationId=${conversationId}`);
+
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        // Handle incoming messages from Meta or self-broadcasts
+        if (data.type === 'incoming' || data.type === 'outgoing') {
+          // Verify it matches the current conversation
+          if (String(data.conversationId) === String(conversationId)) {
+            const newMessage: ChatMessage = {
+              id: String(data.messageId),
+              body: data.bodyText || data.body || '',
+              direction: data.type === 'incoming' ? 'incoming' : 'outgoing',
+              time: new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              senderName: data.type === 'incoming' ? 'Customer' : undefined
+            };
+
+            setMessages(prev => {
+              // Deduplicate by message ID
+              if (prev.find(m => m.id === newMessage.id)) return prev;
+              return [...prev, newMessage];
+            });
+            setTimeout(scrollToBottom, 100);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to parse WebSocket message:', err);
+      }
+    };
+
+    socket.onclose = () => console.log('WebSocket closed');
+    socket.onerror = (err) => console.error('WebSocket error:', err);
+
+    return () => socket.close();
+  }, [whatsappId, conversationId, session]);
 
   const initials = customerNumber
     ? customerNumber.replace(/[^0-9]/g, '').slice(-2)
@@ -123,7 +169,9 @@ export function ChatPane() {
       
       if (res.ok) {
         const data = await res.json();
-        if (data.success) {
+        // The WebSocket will broadcast this back to us as well, but we can optimistically update
+        // or just let the WebSocket handle it. Here we do an optimistic update.
+        if (data.success && !messages.find(m => m.id === String(data.messageId))) {
             const newMessage: ChatMessage = {
               id: String(data.messageId),
               body,
