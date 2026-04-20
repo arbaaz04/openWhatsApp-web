@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Paperclip, Smile, Send, X } from 'lucide-react';
+import { Paperclip, Smile, Send, X, FileText } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -11,9 +11,10 @@ interface ComposerProps {
   replyTo?: Message | null;
   onCancelReply?: () => void;
   onSend?: (body: string, replyToId?: string) => void;
+  onToggleTemplates?: () => void;
 }
 
-export function Composer({ replyTo, onCancelReply, onSend }: ComposerProps) {
+export function Composer({ replyTo, onCancelReply, onSend, onToggleTemplates }: ComposerProps) {
   const [text, setText] = useState('');
 
   const handleSend = () => {
@@ -70,6 +71,15 @@ export function Composer({ replyTo, onCancelReply, onSend }: ComposerProps) {
             </button>
             <button className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors" title="Insert emoji">
               <Smile className="w-4 h-4" />
+            </button>
+            <div className="w-px h-3.5 bg-gray-200 mx-0.5"></div>
+            <button 
+              onClick={onToggleTemplates}
+              className="p-1.5 text-[#128C7E] hover:bg-[#128C7E]/5 rounded transition-colors flex items-center gap-1" 
+              title="WhatsApp Templates"
+            >
+              <FileText className="w-4 h-4" />
+              <span className="text-[11px] font-bold">Templates</span>
             </button>
           </div>
           <button 

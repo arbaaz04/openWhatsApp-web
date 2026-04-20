@@ -192,6 +192,62 @@ export async function sendWhatsAppMessage(options: {
   throw new ApiError(503, 'Unable to reach the Meta WhatsApp API after multiple attempts. Try again shortly.', 'META_UNAVAILABLE');
 }
 
+/**
+ * Fetches all approved message templates for a WhatsApp Business Account (WABA).
+ *
+ * @param options.wabaId      - The WhatsApp Business Account ID (WABA ID)
+ * @param options.accessToken - The decrypted channel access token
+ * @returns Array of templates from Meta
+ */
+export async function getTemplates(options: {
+  wabaId: string;
+  accessToken: string;
+}): Promise<any[]> {
+  const { wabaId, accessToken } = options;
+  const log = createLogger({ requestId: 'meta-api-templates' });
+
+  const url = `${META_GRAPH_BASE}/${wabaId}/message_templates?limit=500`;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const backoffMs = INITIAL_BACKOFF_MS * 2 ** (attempt - 1);
+
+    try {
+      const response = await fetchWithTimeout(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const json = await response.json() as Record<string, any>;
+
+      if (!response.ok) {
+        const err = extractMetaError(json);
+        if (response.status < 500 && response.status !== 429) {
+          throw new MetaApiError(err);
+        }
+      } else {
+        return (json.data as any[]) || [];
+      }
+    } catch (err) {
+      if (err instanceof MetaApiError && err.statusCode < 500 && err.statusCode !== 429) {
+        throw err;
+      }
+      log.warn('Meta API templates request failed — will retry', {
+        attempt,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    if (attempt < MAX_RETRIES) {
+      await sleep(backoffMs);
+    }
+  }
+
+  throw new ApiError(503, 'Unable to fetch templates from Meta API.', 'META_UNAVAILABLE');
+}
+
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------

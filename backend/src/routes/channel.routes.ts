@@ -6,6 +6,9 @@ import { type DrizzleDb } from '../db/index.js';
 import { channels } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
+import { getTemplates } from '../utils/metaApiClient.js';
+import { decrypt } from '../utils/encryption.js';
+import { ApiError } from '../utils/errors.js';
 
 type Variables = { 
   requestId: string; 
@@ -141,6 +144,71 @@ channelRouter.openapi(deleteChannelRoute, async (c) => {
   log.info('Channel disconnected', { teamId, channelId });
 
   return c.json({ success: true as const }, 200);
+});
+
+// ---------------------------------------------------------------------------
+// GET /:teamId/channels/:channelId/templates — fetch templates from Meta
+// ---------------------------------------------------------------------------
+
+const listTemplatesRoute = createRoute({
+  method: 'get',
+  path: '/:teamId/channels/:channelId/templates',
+  request: {
+    params: z.object({
+      teamId: z.string().regex(/^\d+$/),
+      channelId: z.string().regex(/^\d+$/),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'List of approved WhatsApp message templates',
+      content: {
+        'application/json': {
+          schema: z.object({
+            success: z.literal(true),
+            templates: z.array(z.any()),
+          }),
+        },
+      },
+    },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Insufficient permissions' },
+    404: { description: 'Channel not found' },
+    500: { description: 'Internal server error' },
+  },
+});
+
+channelRouter.openapi(listTemplatesRoute, async (c) => {
+  const db = c.get('db');
+  const log = createLogger({ requestId: c.get('requestId') });
+  const teamId = parseInt(c.req.param('teamId'), 10);
+  const channelId = parseInt(c.req.param('channelId'), 10);
+
+  // 1. Fetch channel details
+  const [channel] = await db
+    .select()
+    .from(channels)
+    .where(and(eq(channels.id, channelId), eq(channels.teamId, teamId)))
+    .limit(1);
+
+  if (!channel) {
+    throw new ApiError(404, 'Channel not found or not owned by team', 'CHANNEL_NOT_FOUND');
+  }
+
+  if (!channel.wabaId) {
+    throw new ApiError(422, 'This channel does not have a linked WABA ID', 'CHANNEL_MISCONFIGURED');
+  }
+
+  // 2. Decrypt token and fetch templates
+  const accessToken = await decrypt(channel.accessToken, c.env.DATA_ENCRYPTION_KEY);
+  const templates = await getTemplates({
+    wabaId: channel.wabaId,
+    accessToken,
+  });
+
+  log.info('Templates fetched from Meta', { teamId, channelId, count: templates.length });
+
+  return c.json({ success: true as const, templates }, 200);
 });
 
 // Apply auth/role middleware to all routes

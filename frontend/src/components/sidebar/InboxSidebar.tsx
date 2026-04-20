@@ -139,7 +139,7 @@ export function InboxSidebar() {
     return () => {
       sockets.forEach(s => s.close());
     };
-  }, [session, conversations.length === 0]); // Only reconnect if conversation list was empty and is now filled
+  }, [session, conversations]); 
 
   return (
     <div className="w-[280px] h-full bg-white border-r border-[#E5E7EB] flex flex-col shrink-0">

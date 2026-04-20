@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { MoreHorizontal, Info, ArrowLeft, Loader2 } from 'lucide-react';
 import { Composer } from './Composer';
 import { MessageBubble } from './MessageBubble';
+import { TemplatePicker } from './TemplatePicker';
 import { useParams, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../contexts/AuthContext';
@@ -76,6 +77,8 @@ export function ChatPane() {
   }, [conversationId, session]);
 
   const [whatsappId, setWhatsappId] = useState<string>('');
+  const [teamId, setTeamId] = useState<string | number>('');
+  const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
 
   // Try to find the customer number and whatsappId from the sidebar context or similar. 
   useEffect(() => {
@@ -88,10 +91,11 @@ export function ChatPane() {
           });
           if (res.ok) {
             const data = await res.json();
-            const conv = data.conversations.find((c: { id: number; customerNumber: string, whatsappId: string }) => String(c.id) === conversationId);
+            const conv = data.conversations.find((c: { id: number; customerNumber: string, whatsappId: string, teamId: number }) => String(c.id) === conversationId);
             if (conv) {
               setCustomerNumber(conv.customerNumber);
               setWhatsappId(conv.whatsappId);
+              setTeamId(conv.teamId);
             }
           }
         } catch (e) {
@@ -118,7 +122,7 @@ export function ChatPane() {
           if (String(data.conversationId) === String(conversationId)) {
             const newMessage: ChatMessage = {
               id: String(data.messageId),
-              body: data.bodyText || data.body || '',
+              body: data.bodyText || data.body || (data.type === 'outgoing' && data.wamid ? 'Template Message' : ''),
               direction: data.type === 'incoming' ? 'incoming' : 'outgoing',
               time: new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               senderName: data.type === 'incoming' ? 'Customer' : undefined
@@ -170,7 +174,6 @@ export function ChatPane() {
       if (res.ok) {
         const data = await res.json();
         // The WebSocket will broadcast this back to us as well, but we can optimistically update
-        // or just let the WebSocket handle it. Here we do an optimistic update.
         if (data.success && !messages.find(m => m.id === String(data.messageId))) {
             const newMessage: ChatMessage = {
               id: String(data.messageId),
@@ -185,6 +188,46 @@ export function ChatPane() {
       }
     } catch (err) {
       console.error('Failed to send message:', err);
+    }
+  };
+
+  const handleSendTemplate = async (payload: Record<string, unknown>) => {
+    if (!session || !conversationId) return;
+    try {
+      // Find the template body text to show it optimistically
+      const template = payload.template as { name: string };
+      const templateName = template.name;
+      const bodyText = `Sent Template: ${templateName.replaceAll('_', ' ')}`;
+
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
+      const res = await fetch(`${apiUrl}/api/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ 
+          body: bodyText,
+          type: 'template',
+          payload
+        })
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+            const newMessage: ChatMessage = {
+              id: String(data.messageId),
+              body: bodyText,
+              direction: 'outgoing',
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+            setMessages(prev => [...prev, newMessage]);
+            setTimeout(scrollToBottom, 100);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to send template:', err);
     }
   };
 
@@ -269,13 +312,22 @@ export function ChatPane() {
       </div>
 
       {/* Composer Container */}
-      <div className="px-4 pb-4">
+      <div className="px-4 pb-4 shrink-0">
         <Composer 
           replyTo={replyingTo} 
           onCancelReply={() => setReplyingTo(null)} 
           onSend={handleSendMessage}
+          onToggleTemplates={() => setIsTemplatePickerOpen(true)}
         />
       </div>
+
+      <TemplatePicker
+        isOpen={isTemplatePickerOpen}
+        onClose={() => setIsTemplatePickerOpen(false)}
+        onSelect={handleSendTemplate}
+        channelId={whatsappId}
+        teamId={teamId}
+      />
     </div>
   );
 }

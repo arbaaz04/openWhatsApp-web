@@ -28,25 +28,30 @@ describe('verifyWebhookSignature', () => {
     const body = JSON.stringify({ test: true });
     const secret = 'my-app-secret';
     const sig = await sign(body, secret);
-    expect(await verifyWebhookSignature(body, sig, secret)).toBe(true);
+    const result = await verifyWebhookSignature(body, sig, secret);
+    expect(result.valid).toBe(true);
   });
 
   it('returns false when signature header is missing sha256= prefix', async () => {
-    expect(await verifyWebhookSignature('body', 'invalidsig', 'secret')).toBe(false);
+    const result = await verifyWebhookSignature('body', 'invalidsig', 'secret');
+    expect(result.valid).toBe(false);
   });
 
   it('returns false when signature does not match the body', async () => {
     const sig = await sign('original body', 'secret');
-    expect(await verifyWebhookSignature('tampered body', sig, 'secret')).toBe(false);
+    const result = await verifyWebhookSignature('tampered body', sig, 'secret');
+    expect(result.valid).toBe(false);
   });
 
   it('returns false when signed with a different secret', async () => {
     const sig = await sign('body', 'correct-secret');
-    expect(await verifyWebhookSignature('body', sig, 'wrong-secret')).toBe(false);
+    const result = await verifyWebhookSignature('body', sig, 'wrong-secret');
+    expect(result.valid).toBe(false);
   });
 
   it('returns false for an empty signature string', async () => {
-    expect(await verifyWebhookSignature('body', '', 'secret')).toBe(false);
+    const result = await verifyWebhookSignature('body', '', 'secret');
+    expect(result.valid).toBe(false);
   });
 });
 
