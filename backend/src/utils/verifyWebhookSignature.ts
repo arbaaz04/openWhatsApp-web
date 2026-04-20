@@ -28,7 +28,8 @@ export async function verifyWebhookSignature(
 ): Promise<boolean> {
   if (!signature.startsWith('sha256=')) return false;
 
-  const receivedHex = signature.slice('sha256='.length);
+  // Meta often sends hex in lowercase, but we should be case-insensitive just in case.
+  const receivedHex = signature.slice('sha256='.length).toLowerCase();
 
   const encoder = new TextEncoder();
   const keyData = encoder.encode(secret);

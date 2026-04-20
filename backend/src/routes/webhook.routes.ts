@@ -43,18 +43,24 @@ webhookRouter.use('/', async (c, next) => {
     await next();
     return;
   }
-
   const log = createLogger({ requestId: c.get('requestId') });
   const signature = c.req.header('X-Hub-Signature-256') ?? '';
+  const secret = c.env.META_APP_SECRET;
 
-  // Read raw body for HMAC computation — the body stream can only be consumed once.
-  // We store the string on the request object so the downstream handler avoids
-  // a second read attempt.
+  if (!secret) {
+    log.error('META_APP_SECRET is missing from environment bindings');
+    return c.json({ success: false, error: 'Internal configuration error' }, 500);
+  }
+
   const rawBody = await c.req.text();
+  const valid = await verifyWebhookSignature(rawBody, signature, secret);
 
-  const valid = await verifyWebhookSignature(rawBody, signature, c.env.META_APP_SECRET ?? '');
   if (!valid) {
-    log.error('Webhook HMAC verification failed', { hasSignature: !!signature });
+    log.error('Webhook HMAC verification failed', { 
+      hasSignature: !!signature,
+      signaturePrefix: signature.slice(0, 15),
+      bodyLength: rawBody.length 
+    });
     return c.json({ success: false, error: 'Invalid webhook signature' }, 401);
   }
 
