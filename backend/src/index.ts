@@ -18,6 +18,7 @@ import userRouter from './routes/user.routes.js';
 import conversationRouter from './routes/conversation.routes.js';
 import dashboardRouter from './routes/dashboard.routes.js';
 import userWebhookRouter from './routes/userWebhook.routes.js';
+import channelRouter from './routes/channel.routes.js';
 
 // ---------------------------------------------------------------------------
 // Hono type extensions — Variables available on every request context
@@ -157,7 +158,8 @@ app.route('/api/ws', wsRouter);
 app.route('/api/users', userRouter);
 app.route('/api/conversations', conversationRouter);
 app.route('/api/dashboard', dashboardRouter);
-app.route('/api/teams', userWebhookRouter);
+app.route('/api/teams', channelRouter); // Channels list & delete at /api/teams/:teamId/channels
+app.route('/api/teams', userWebhookRouter); // Webhooks at /api/teams/:teamId/webhooks
 
 app.doc('/doc', {
   openapi: '3.1.0',

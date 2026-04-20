@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Smartphone, Info, Cpu, CheckCircle2, Loader2, MoreVertical, ExternalLink, Activity } from 'lucide-react';
+import { Smartphone, Info, Cpu, CheckCircle2, Loader2, ExternalLink, Activity } from 'lucide-react';
 import { cn } from '../../lib/utils.js';
 import { MetaSignupButton } from '../MetaSignupButton.jsx';
 import { useAuth } from '../../contexts/AuthContext.jsx';
@@ -13,6 +13,7 @@ interface Channel {
   teamId: number;
   type: 'sim' | 'business_app';
   phoneNumber: string | null;
+  businessName: string | null;
   whatsappId: string | null;
   wabaId: string | null;
   status: 'active' | 'paused' | 'disabled';
@@ -50,6 +51,7 @@ export function PhoneNumbers() {
     try {
       setLoading(true);
       setError(null);
+      // Path aligned with backend mounting point /api/teams/:teamId/channels
       const res = await authFetch(`/api/teams/${teamId}/channels`);
       if (!res.ok) throw new Error(`Failed to load channels (${res.status})`);
       const data = await res.json();
@@ -61,6 +63,22 @@ export function PhoneNumbers() {
       setLoading(false);
     }
   }, [authFetch, teamId]);
+
+  const handleDisconnect = async (channelId: number) => {
+    if (!teamId || !window.confirm('Are you sure you want to disconnect this number? This will stop all active automations for this line.')) return;
+    
+    try {
+      const res = await authFetch(`/api/teams/${teamId}/channels/${channelId}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) throw new Error('Failed to disconnect channel');
+      
+      // Refresh list
+      fetchChannels();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to disconnect');
+    }
+  };
 
   useEffect(() => {
     fetchChannels();
@@ -104,22 +122,28 @@ export function PhoneNumbers() {
 
         {/* Connected Channels List */}
         {!loading && channels.length > 0 && (
-          <div className="grid grid-cols-1 gap-4">
-            {channels.map((channel) => (
-              <ChannelCard key={channel.id} channel={channel} />
-            ))}
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-6">
+              {channels.map((channel) => (
+                <ChannelCard 
+                  key={channel.id} 
+                  channel={channel} 
+                  onDisconnect={() => handleDisconnect(channel.id)} 
+                />
+              ))}
+            </div>
           </div>
         )}
 
         {/* Connection Options Section */}
         <div className="space-y-6">
-          {channels.length > 0 && (
-            <div className="flex items-center gap-4">
-              <div className="h-px flex-1 bg-[#EDEDED]" />
-              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em]">Add New Connection</span>
-              <div className="h-px flex-1 bg-[#EDEDED]" />
-            </div>
-          )}
+          <div className="flex items-center gap-4">
+            <div className="h-px flex-1 bg-[#EDEDED]" />
+            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em]">
+              {channels.length > 0 ? 'Add New Connection' : 'Get Started'}
+            </span>
+            <div className="h-px flex-1 bg-[#EDEDED]" />
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <ConnectionCard 
@@ -153,63 +177,84 @@ export function PhoneNumbers() {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function ChannelCard({ channel }: { channel: Channel }) {
+function ChannelCard({ channel, onDisconnect }: { channel: Channel, onDisconnect: () => void }) {
   const isActive = channel.status === 'active';
   
   return (
-    <div className="group p-6 bg-white border border-[#EDEDED] rounded-3xl transition-all hover:shadow-md hover:border-[#128C7E]/30 relative overflow-hidden">
-      {/* Background Pattern */}
-      <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.08] transition-opacity pointer-events-none">
-        <Smartphone className="w-32 h-32 -mr-8 -mt-8 rotate-12" />
+    <div className="group bg-white border border-[#EDEDED] rounded-3xl transition-all hover:shadow-lg hover:border-[#128C7E]/20 overflow-hidden">
+      <div className="p-8 space-y-6">
+        {/* Status Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl group-hover:bg-[#128C7E]/5 transition-colors">
+                <Smartphone className={cn("w-5 h-5", isActive ? "text-[#128C7E]" : "text-gray-400")} />
+              </div>
+              {isActive && (
+                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                </span>
+              )}
+            </div>
+            <span className={cn(
+              "px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider",
+              isActive ? "bg-green-50 text-green-600" : "bg-gray-50 text-gray-400"
+            )}>
+              {isActive ? 'Connected' : channel.status}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+             <button 
+              onClick={onDisconnect}
+              className="text-[12px] font-bold text-red-500 hover:text-red-600 px-3 py-1.5 hover:bg-red-50 rounded-lg transition-all"
+             >
+              Disconnect
+             </button>
+             <a 
+              href="/chat" 
+              className="flex items-center gap-1.5 text-[#128C7E] hover:text-[#075E54] text-[13px] font-bold px-3 py-1.5 hover:bg-[#128C7E]/5 rounded-lg transition-all"
+            >
+              View Inbox <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+        </div>
+
+        {/* Info Grid - Styled after whatflow-official-api */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="space-y-1.5">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Business Name</p>
+            <p className="text-[15px] font-bold text-gray-900 tracking-tight leading-none h-5">
+              {channel.businessName || 'WhatsApp Business'}
+            </p>
+          </div>
+          
+          <div className="space-y-1.5">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Phone Number</p>
+            <p className="text-[15px] font-bold text-gray-900 tracking-tight leading-none h-5 flex items-center gap-1.5">
+              {channel.phoneNumber || '—'}
+              {isActive && <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">WABA ID</p>
+            <p className="text-[15px] font-bold text-gray-900 tracking-tight leading-none h-5">
+              {channel.wabaId || '—'}
+            </p>
+          </div>
+        </div>
       </div>
-
-      <div className="flex items-center justify-between relative z-10">
-        <div className="flex items-center gap-5">
-          <div className="relative">
-            <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl group-hover:bg-[#128C7E]/5 group-hover:border-[#128C7E]/10 transition-colors">
-              <Smartphone className={cn("w-6 h-6", isActive ? "text-[#128C7E]" : "text-gray-400")} />
-            </div>
-            {isActive && (
-              <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-              </span>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <h3 className="text-lg font-bold text-gray-900 tracking-tight">
-                {channel.phoneNumber || 'Official Business Account'}
-              </h3>
-              <span className={cn(
-                "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                isActive ? "bg-green-50 text-green-600" : "bg-gray-50 text-gray-400"
-              )}>
-                {channel.status}
-              </span>
-            </div>
-            <div className="flex items-center gap-3 text-[12px] text-gray-400 font-medium">
-              <span className="flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3 text-[#128C7E]" /> Verified Meta Connection
-              </span>
-              <span>•</span>
-              <span>ID: {channel.whatsappId?.substring(0, 12)}...</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-colors">
-            <MoreVertical className="w-5 h-5" />
-          </button>
-          <a 
-            href="/chat" 
-            className="flex items-center gap-2 bg-gray-900 text-white text-[13px] font-bold px-5 py-2.5 rounded-xl hover:bg-[#128C7E] transition-all shadow-sm"
-          >
-            View Inbox <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-        </div>
+      
+      {/* Footer Meta */}
+      <div className="bg-gray-50/50 px-8 py-3 border-t border-[#EDEDED] flex items-center justify-between">
+        <span className="text-[11px] text-gray-400 font-medium tracking-wide">
+          Meta Verified • Official Cloud API
+        </span>
+        <span className="text-[11px] text-gray-300 font-medium">
+          Line ID: {channel.whatsappId}
+        </span>
       </div>
     </div>
   );

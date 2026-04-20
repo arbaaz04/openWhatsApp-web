@@ -159,6 +159,8 @@ export const channels = pgTable(
     phoneNumber: varchar('phone_number', { length: 20 }),
     whatsappId: text('whatsapp_phone_number_id'),
     wabaId: text('waba_id'),
+    /** The official business name associated with the WhatsApp account */
+    businessName: varchar('business_name', { length: 255 }),
     /** AES-256-GCM encrypted WhatsApp access token. Never stored in plaintext. */
     accessToken: text('access_token').notNull(),
     status: channelStatusEnum('status').default('active').notNull(),

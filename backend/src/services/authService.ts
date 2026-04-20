@@ -94,6 +94,20 @@ async function fetchPhoneNumberInfo(wabaId: string, accessToken: string): Promis
 }
 
 /**
+ * Fetches the official name of the WhatsApp Business Account.
+ */
+async function fetchWabaName(wabaId: string, accessToken: string): Promise<string> {
+  const url = `https://graph.facebook.com/v25.0/${wabaId}?fields=name&access_token=${accessToken}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    logger.warn('Failed to fetch WABA name from Meta', { wabaId, status: res.status });
+    return '';
+  }
+  const data = (await res.json()) as { name?: string };
+  return data.name || '';
+}
+
+/**
  * Fetches the display phone number for a specific phone number ID.
  */
 async function fetchSinglePhoneInfo(phoneNumberId: string, accessToken: string): Promise<string> {
@@ -205,7 +219,6 @@ export const authService = {
 
     const plainAccessToken = await fetchMetaAccessToken(clientId, clientSecret, code);
 
-    // Use provided IDs or auto-discover
     let finalWabaId: string;
     let finalPhoneNumberId: string;
     let phoneNumber: string;
@@ -223,7 +236,10 @@ export const authService = {
       phoneNumber = await fetchSinglePhoneInfo(finalPhoneNumberId, plainAccessToken);
     }
     
-    logger.info('Using business IDs', { wabaId: finalWabaId, phoneNumberId: finalPhoneNumberId, phoneNumber });
+    // Fetch business name (optional but highly recommended for UI alignment)
+    const businessName = await fetchWabaName(finalWabaId, plainAccessToken);
+    
+    logger.info('Using business IDs', { wabaId: finalWabaId, phoneNumberId: finalPhoneNumberId, phoneNumber, businessName });
 
     // Perform Embedded Signup mandatory post-actions
     await subscribeAppToWebhooks(finalWabaId, plainAccessToken);
@@ -250,7 +266,12 @@ export const authService = {
 
         await db
           .update(channels)
-          .set({ wabaId: finalWabaId, accessToken: encryptedToken, phoneNumber: phoneNumber })
+          .set({ 
+            wabaId: finalWabaId, 
+            accessToken: encryptedToken, 
+            phoneNumber: phoneNumber,
+            businessName: businessName || undefined 
+          })
           .where(eq(channels.whatsappId, finalPhoneNumberId));
 
         logger.info('Channel credentials rotated', { wabaId: finalWabaId, phoneNumberId: finalPhoneNumberId });
@@ -261,6 +282,7 @@ export const authService = {
           wabaId: finalWabaId,
           whatsappId: finalPhoneNumberId,
           phoneNumber,
+          businessName,
           accessToken: encryptedToken,
         };
         
