@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import userRouter from '../routes/user.routes.js';
+import channelRouter from '../routes/channel.routes.js';
 import { Hono } from 'hono';
 
 // Mock the dependencies
@@ -30,6 +30,7 @@ const mockDb = {
       teamId: 10,
       type: 'business_app',
       phoneNumber: '+1234567890',
+      businessName: 'Test Business',
       whatsappId: 'phone-id-abc',
       wabaId: 'waba-id-123',
       status: 'active',
@@ -38,7 +39,7 @@ const mockDb = {
   ]),
 };
 
-describe('User Routes - Channels', () => {
+describe('Channel Routes', () => {
   let app: Hono<any>;
 
   beforeEach(() => {
@@ -54,7 +55,7 @@ describe('User Routes - Channels', () => {
       await next();
     });
 
-    app.route('/api/users', userRouter);
+    app.route('/api/teams', channelRouter);
 
     app.onError((err, c) => {
       console.error('TEST APP ERROR:', err.message, err.stack);
@@ -62,8 +63,8 @@ describe('User Routes - Channels', () => {
     });
   });
 
-  it('GET /api/users/teams/:teamId/channels returns a list of channels', async () => {
-    const res = await app.request('/api/users/teams/10/channels', {
+  it('GET /api/teams/:teamId/channels returns a list of channels', async () => {
+    const res = await app.request('/api/teams/10/channels', {
       method: 'GET',
     });
 
@@ -72,6 +73,6 @@ describe('User Routes - Channels', () => {
     expect(body.success).toBe(true);
     expect(body.channels).toHaveLength(1);
     expect(body.channels[0].phoneNumber).toBe('+1234567890');
-    expect(body.channels[0].whatsappId).toBe('phone-id-abc');
+    expect(body.channels[0].businessName).toBe('Test Business');
   });
 });

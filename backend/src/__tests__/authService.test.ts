@@ -36,9 +36,14 @@ describe('Auth Service — Token Exchange', () => {
       ok: true,
       json: async () => ({ data: [{ id: 'phone1', display_phone_number: '+12345', status: 'CONNECTED' }] }),
     });
-    // 4. Mock Subscribe
+    // 4. Mock WABA Name fetch (NEW)
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ name: 'Test Business' }),
+    });
+    // 5. Mock Subscribe
     mockFetch.mockResolvedValueOnce({ ok: true });
-    // 5. Mock Register
+    // 6. Mock Register
     mockFetch.mockResolvedValueOnce({ ok: true });
 
     const selectChain = { from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }) }) };
@@ -51,7 +56,7 @@ describe('Auth Service — Token Exchange', () => {
       db, 'code123', 1, 'appId', 'appSecret', TEST_ENCRYPTION_KEY
     );
 
-    expect(mockFetch).toHaveBeenCalledTimes(5);
+    expect(mockFetch).toHaveBeenCalledTimes(6);
     const calledUrl = mockFetch.mock.calls[0][0] as string;
     expect(calledUrl).toContain('oauth/access_token');
     expect(calledUrl).toContain('code=code123');
@@ -76,9 +81,14 @@ describe('Auth Service — Token Exchange', () => {
       ok: true,
       json: async () => ({ data: [{ id: 'phone2', display_phone_number: '+12345', status: 'CONNECTED' }] }),
     });
-    // 4. Mock Subscribe
+    // 4. Mock WABA Name fetch (NEW)
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ name: 'Updated Business' }),
+    });
+    // 5. Mock Subscribe
     mockFetch.mockResolvedValueOnce({ ok: true });
-    // 5. Mock Register
+    // 6. Mock Register
     mockFetch.mockResolvedValueOnce({ ok: true });
 
     const selectChain = { from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([{ id: 5, teamId: 1 }]) }) }) };
@@ -134,9 +144,14 @@ describe('Auth Service — Token Exchange', () => {
       ok: true,
       json: async () => ({ data: [{ id: 'phone2', display_phone_number: '+12345', status: 'CONNECTED' }] }),
     });
-    // 4. Mock Subscribe
+    // 4. Mock WABA Name fetch (NEW)
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ name: 'Cross Team Business' }),
+    });
+    // 5. Mock Subscribe
     mockFetch.mockResolvedValueOnce({ ok: true });
-    // 5. Mock Register
+    // 6. Mock Register
     mockFetch.mockResolvedValueOnce({ ok: true });
 
     const selectChain = { from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([{ id: 5, teamId: 99 }]) }) }) };
