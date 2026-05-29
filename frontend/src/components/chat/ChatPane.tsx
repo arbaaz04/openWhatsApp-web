@@ -79,27 +79,28 @@ export function ChatPane() {
   const [whatsappId, setWhatsappId] = useState<string>('');
   const [teamId, setTeamId] = useState<string | number>('');
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+  const [lastCustomerMessageAt, setLastCustomerMessageAt] = useState<string | null>(null);
 
-  // Try to find the customer number and whatsappId from the sidebar context or similar. 
+  // Try to find the customer number and whatsappId from the single conversation endpoint.
   useEffect(() => {
      async function fetchConvMeta() {
         if (!session || !conversationId) return;
         try {
           const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
-          const res = await fetch(`${apiUrl}/api/conversations/`, {
+          const res = await fetch(`${apiUrl}/api/conversations/${conversationId}`, {
             headers: { 'Authorization': `Bearer ${session.access_token}` }
           });
           if (res.ok) {
             const data = await res.json();
-            const conv = data.conversations.find((c: { id: number; customerNumber: string, whatsappId: string, teamId: number }) => String(c.id) === conversationId);
-            if (conv) {
-              setCustomerNumber(conv.customerNumber);
-              setWhatsappId(conv.whatsappId);
-              setTeamId(conv.teamId);
+            if (data.success && data.conversation) {
+              setCustomerNumber(data.conversation.customerNumber);
+              setWhatsappId(data.conversation.whatsappId);
+              setTeamId(data.conversation.teamId);
+              setLastCustomerMessageAt(data.conversation.lastCustomerMessageAt);
             }
           }
         } catch (e) {
-          console.error(e);
+          console.error('Failed to fetch conversation metadata:', e);
         }
      }
      fetchConvMeta();
@@ -133,6 +134,12 @@ export function ChatPane() {
               if (prev.find(m => m.id === newMessage.id)) return prev;
               return [...prev, newMessage];
             });
+
+            // Update session window in real-time when a customer message is received
+            if (data.type === 'incoming') {
+              setLastCustomerMessageAt(data.timestamp);
+            }
+
             setTimeout(scrollToBottom, 100);
           }
         }
@@ -146,6 +153,10 @@ export function ChatPane() {
 
     return () => socket.close();
   }, [whatsappId, conversationId, session]);
+
+  // Calculate session expiration
+  const isExpired = !lastCustomerMessageAt || 
+    (Date.now() - new Date(lastCustomerMessageAt).getTime()) >= 24 * 60 * 60 * 1000;
 
   const initials = customerNumber
     ? customerNumber.replace(/[^0-9]/g, '').slice(-2)
@@ -318,6 +329,7 @@ export function ChatPane() {
           onCancelReply={() => setReplyingTo(null)} 
           onSend={handleSendMessage}
           onToggleTemplates={() => setIsTemplatePickerOpen(true)}
+          isExpired={isExpired}
         />
       </div>
 

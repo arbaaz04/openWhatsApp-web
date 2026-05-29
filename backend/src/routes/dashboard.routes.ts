@@ -3,7 +3,7 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { createLogger } from '../utils/logger.js';
 import { type DrizzleDb } from '../db/index.js';
 import { messages, conversations, channels, teamMembers } from '../db/schema.js';
-import { eq, desc, sql, and } from 'drizzle-orm';
+import { eq, desc, sql, and, gt } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
 
 type Variables = { requestId: string; userId: string; userEmail: string; teamId: string; db: DrizzleDb };
@@ -98,7 +98,12 @@ dashboardRouter.openapi(statsRoute, async (c) => {
           .from(conversations)
           .innerJoin(channels, eq(channels.id, conversations.channelId))
           .innerJoin(teamMembers, eq(teamMembers.teamId, channels.teamId))
-          .where(and(eq(teamMembers.userId, userId), eq(conversations.isWindowOpen, true))),
+          .where(
+            and(
+              eq(teamMembers.userId, userId),
+              gt(conversations.lastCustomerMessageAt, new Date(Date.now() - 24 * 60 * 60 * 1000))
+            )
+          ),
         'activeConversationsCount'
       ),
       withTimeout(

@@ -112,10 +112,16 @@ export function InboxSidebar() {
               
               if (idx !== -1) {
                 // Update existing conversation
+                const isIncoming = data.type === 'incoming';
+                const nextLastCustomerMessageAt = isIncoming ? data.timestamp : next[idx].lastCustomerMessageAt;
+                const isWindowOpen = nextLastCustomerMessageAt
+                  ? (Date.now() - new Date(nextLastCustomerMessageAt).getTime()) < 24 * 60 * 60 * 1000
+                  : false;
+
                 next[idx] = {
                   ...next[idx],
-                  lastCustomerMessageAt: data.timestamp,
-                  isWindowOpen: true
+                  lastCustomerMessageAt: nextLastCustomerMessageAt,
+                  isWindowOpen
                 };
                 // Move to top
                 const [item] = next.splice(idx, 1);

@@ -78,6 +78,7 @@ async function resolveAndAuthorize(
   customerNumber: string;
   whatsappId: string | null;
   accessToken: string;
+  lastCustomerMessageAt: Date | null;
 }> {
   const [row] = await db
     .select({
@@ -87,6 +88,7 @@ async function resolveAndAuthorize(
       customerNumber: conversations.customerNumber,
       whatsappId: channels.whatsappId,
       accessToken: channels.accessToken,
+      lastCustomerMessageAt: conversations.lastCustomerMessageAt,
     })
     .from(conversations)
     .innerJoin(channels, eq(channels.id, conversations.channelId))
@@ -167,17 +169,87 @@ conversationRouter.openapi(listConversationsRoute, async (c) => {
 
   return c.json({
     success: true as const,
-    conversations: rows.map((row) => ({
+    conversations: rows.map((row) => {
+      const isWindowOpen = row.lastCustomerMessageAt
+        ? (Date.now() - new Date(row.lastCustomerMessageAt).getTime()) < 24 * 60 * 60 * 1000
+        : false;
+      return {
+        id: row.id,
+        channelId: row.channelId,
+        customerNumber: row.customerNumber,
+        whatsappId: row.whatsappId,
+        isWindowOpen,
+        lastCustomerMessageAt: row.lastCustomerMessageAt
+          ? row.lastCustomerMessageAt.toISOString()
+          : null,
+        createdAt: row.createdAt.toISOString(),
+      };
+    }),
+  }, 200);
+});
+
+// ---------------------------------------------------------------------------
+// GET /:conversationId — get conversation details
+// ---------------------------------------------------------------------------
+
+const getConversationRoute = createRoute({
+  method: 'get',
+  path: '/:conversationId',
+  request: {
+    params: z.object({
+      conversationId: z.string().regex(/^\d+$/, 'Must be a numeric ID'),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'Conversation metadata.',
+      content: {
+        'application/json': {
+          schema: z.object({
+            success: z.literal(true),
+            conversation: z.object({
+              id: z.number(),
+              teamId: z.number(),
+              channelId: z.number(),
+              customerNumber: z.string(),
+              whatsappId: z.string().nullable(),
+              isWindowOpen: z.boolean(),
+              lastCustomerMessageAt: z.string().nullable(),
+            }),
+          }),
+        },
+      },
+    },
+    401: { description: 'Unauthorized — missing or invalid JWT' },
+    403: { description: "Conversation does not belong to the caller's team" },
+    404: { description: 'Conversation not found' },
+  },
+});
+
+conversationRouter.openapi(getConversationRoute, async (c) => {
+  const db = c.get('db');
+  const conversationId = parseInt(c.req.param('conversationId'), 10);
+  const userId = c.get('userId');
+
+  const row = await resolveAndAuthorize(db, conversationId, userId);
+
+  const isWindowOpen = row.lastCustomerMessageAt
+    ? (Date.now() - new Date(row.lastCustomerMessageAt).getTime()) < 24 * 60 * 60 * 1000
+    : false;
+
+  return c.json({
+    success: true as const,
+    conversation: {
       id: row.id,
+      teamId: row.teamId,
       channelId: row.channelId,
       customerNumber: row.customerNumber,
       whatsappId: row.whatsappId,
-      isWindowOpen: row.isWindowOpen ?? false,
+      isWindowOpen,
       lastCustomerMessageAt: row.lastCustomerMessageAt
         ? row.lastCustomerMessageAt.toISOString()
         : null,
-      createdAt: row.createdAt.toISOString(),
-    })),
+    },
   }, 200);
 });
 
@@ -353,6 +425,19 @@ conversationRouter.openapi(sendMessageRoute, async (c) => {
 
   // 1. Resolve conversation and enforce team ownership in one DB query
   const row = await resolveAndAuthorize(db, conversationId, userId);
+
+  // 1.5 Check WhatsApp 24-hour service window expiry
+  const isWindowOpen = row.lastCustomerMessageAt
+    ? (Date.now() - new Date(row.lastCustomerMessageAt).getTime()) < 24 * 60 * 60 * 1000
+    : false;
+
+  if (!isWindowOpen && type !== 'template') {
+    throw new ApiError(
+      422,
+      'The 24-hour WhatsApp messaging window is closed. You must use a template message to initiate conversation.',
+      'WINDOW_CLOSED'
+    );
+  }
 
   if (!row.whatsappId) {
     throw new ApiError(422, 'This channel does not have a configured WhatsApp phone number ID', 'CHANNEL_MISCONFIGURED');
