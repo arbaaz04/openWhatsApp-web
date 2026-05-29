@@ -1,8 +1,8 @@
 const crypto = require('crypto');
 
-const secret = process.env.META_APP_SECRET;
-const whatsappId = process.env.WHATSAPP_ID;
-const url = process.env.BACKEND_URL + '/api/webhooks';
+const secret = process.env.META_APP_SECRET || 'test_secret';
+const whatsappId = process.env.WHATSAPP_ID || 'phone-1';
+const url = (process.env.BACKEND_URL || 'http://localhost:8787') + '/api/webhooks';
 
 const payload = JSON.stringify({
   object: "whatsapp_business_account",
@@ -11,13 +11,13 @@ const payload = JSON.stringify({
     changes: [{
       value: {
         messaging_product: "whatsapp",
-        metadata: { display_phone_number: "16315551181", phone_number_id: whatsappId },
-        contacts: [{ profile: { name: "Test User" }, wa_id: "16315551181" }],
+        metadata: { display_phone_number: "+16315551182", phone_number_id: whatsappId },
+        contacts: [{ profile: { name: "Test User" }, wa_id: "+16315551182" }],
         messages: [{
-          from: "16315551181",
-          id: "wamid.HBgLMTYzMTU1NTExODEVAgARGBIxM0U0OEY3OTU0N0IyMjlERDQA",
+          from: "16315551182",
+          id: "wamid.HBgLMTYzMTU1NTExODEVAgARGBI" + Math.random().toString(36).substring(2, 10).toUpperCase(),
           timestamp: Math.floor(Date.now() / 1000).toString(),
-          text: { body: "Hello from terminal test!" },
+          text: { body: "New hello from terminal test!" },
           type: "text"
         }]
       },

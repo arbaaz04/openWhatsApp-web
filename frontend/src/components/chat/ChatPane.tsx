@@ -80,6 +80,15 @@ export function ChatPane() {
   const [teamId, setTeamId] = useState<string | number>('');
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const [lastCustomerMessageAt, setLastCustomerMessageAt] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  // Dynamic ticking timer to update the window expiry in real-time
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 10000); // 10 seconds
+    return () => clearInterval(timer);
+  }, []);
 
   // Try to find the customer number and whatsappId from the single conversation endpoint.
   useEffect(() => {
@@ -111,7 +120,8 @@ export function ChatPane() {
     if (!session || !whatsappId || !conversationId) return;
 
     const apiUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8787').replace('http', 'ws');
-    const socket = new WebSocket(`${apiUrl}/api/ws/inbox?phoneNumberId=${whatsappId}&conversationId=${conversationId}`);
+    const token = session?.access_token || '';
+    const socket = new WebSocket(`${apiUrl}/api/ws/inbox?phoneNumberId=${whatsappId}&conversationId=${conversationId}&token=${encodeURIComponent(token)}`);
 
     socket.onmessage = (event) => {
       try {
@@ -156,7 +166,7 @@ export function ChatPane() {
 
   // Calculate session expiration
   const isExpired = !lastCustomerMessageAt || 
-    (Date.now() - new Date(lastCustomerMessageAt).getTime()) >= 24 * 60 * 60 * 1000;
+    (currentTime - new Date(lastCustomerMessageAt).getTime()) >= 24 * 60 * 60 * 1000;
 
   const initials = customerNumber
     ? customerNumber.replace(/[^0-9]/g, '').slice(-2)

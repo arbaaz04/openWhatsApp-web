@@ -31,7 +31,10 @@ export function InboxSidebar() {
   const [loading, setLoading] = useState(true);
   const [numbersCount, setNumbersCount] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { session } = useAuth();
+  const { session, teams } = useAuth();
+  const teamId = teams[0]?.teamId;
+  const [channels, setChannels] = useState<{ id: number; whatsappId: string }[]>([]);
+  const [currentTime, setCurrentTime] = useState(Date.now());
   const navigate = useNavigate();
 
   const handleStartChat = (phone: string) => {
@@ -89,18 +92,54 @@ export function InboxSidebar() {
     fetchData();
   }, [session]);
 
+  // Fetch linked channels/numbers to ensure we connect WebSockets even if there are 0 conversations
+  useEffect(() => {
+    async function fetchChannels() {
+      if (!session || !teamId) return;
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
+        const res = await fetch(`${apiUrl}/api/teams/${teamId}/channels`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            setChannels(data.channels);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch channels in sidebar:', err);
+      }
+    }
+    fetchChannels();
+  }, [session, teamId]);
+
+  // Dynamic ticking timer to update the window expiry in real-time
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 10000); // 10 seconds
+    return () => clearInterval(timer);
+  }, []);
+
+  const uniqueWhatsappIds = [...new Set([
+    ...channels.map(c => c.whatsappId).filter(Boolean),
+    ...conversations.map(c => c.whatsappId).filter(Boolean)
+  ])];
+  const whatsappIdsKey = uniqueWhatsappIds.join(',');
+
   // WebSocket for real-time sidebar updates
   useEffect(() => {
-    if (!session || conversations.length === 0) return;
+    if (!session || uniqueWhatsappIds.length === 0) return;
 
-    // Get unique WhatsApp IDs to connect to
-    const uniqueWhatsappIds = [...new Set(conversations.map(c => c.whatsappId).filter(Boolean))];
     const sockets: WebSocket[] = [];
-
     const apiUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8787').replace('http', 'ws');
+    const token = session?.access_token || '';
 
     uniqueWhatsappIds.forEach(whatsappId => {
-      const socket = new WebSocket(`${apiUrl}/api/ws/inbox?phoneNumberId=${whatsappId}`);
+      const socket = new WebSocket(`${apiUrl}/api/ws/inbox?phoneNumberId=${whatsappId}&token=${encodeURIComponent(token)}`);
       
       socket.onmessage = (event) => {
         try {
@@ -127,9 +166,34 @@ export function InboxSidebar() {
                 const [item] = next.splice(idx, 1);
                 next.unshift(item);
               } else {
-                // This might be a new conversation started while the user is inside.
-                // We'd ideally fetch the full object, but for now we'll wait for a refresh
-                // or implement a full "new conversation" handler.
+                // This is a new conversation started while the user is inside.
+                // Fetch the new conversation detail and prepend it to the list.
+                fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8787'}/api/conversations/${data.conversationId}`, {
+                  headers: { 'Authorization': `Bearer ${token}` }
+                })
+                  .then(res => res.json())
+                  .then(resData => {
+                    if (resData.success && resData.conversation) {
+                      setConversations(current => {
+                        // Avoid duplicates
+                        if (current.find(c => String(c.id) === String(resData.conversation.id))) {
+                          return current;
+                        }
+                        return [
+                          {
+                            id: resData.conversation.id,
+                            customerNumber: resData.conversation.customerNumber,
+                            whatsappId: resData.conversation.whatsappId || '',
+                            isWindowOpen: resData.conversation.isWindowOpen,
+                            lastCustomerMessageAt: resData.conversation.lastCustomerMessageAt,
+                            createdAt: new Date().toISOString()
+                          },
+                          ...current
+                        ];
+                      });
+                    }
+                  })
+                  .catch(err => console.error('Failed to fetch new conversation detail:', err));
               }
               return next;
             });
@@ -145,7 +209,7 @@ export function InboxSidebar() {
     return () => {
       sockets.forEach(s => s.close());
     };
-  }, [session, conversations]); 
+  }, [session, whatsappIdsKey]); 
 
   return (
     <div className="w-[280px] h-full bg-white border-r border-[#E5E7EB] flex flex-col shrink-0">
@@ -195,16 +259,21 @@ export function InboxSidebar() {
             <p className="text-[12px] text-gray-500">Wait for or start a new conversation.</p>
           </div>
         ) : (
-          conversations.map((chat: Conversation) => (
-            <ConversationItem 
-              key={chat.id} 
-              id={String(chat.id)}
-              name={chat.customerNumber} 
-              lastMessage={chat.isWindowOpen ? 'Window Active' : 'Offline'}
-              time={formatTime(chat.lastCustomerMessageAt || chat.createdAt)}
-              avatarColor="bg-[#128C7E]"
-            />
-          ))
+          conversations.map((chat: Conversation) => {
+            const isWindowOpen = chat.lastCustomerMessageAt
+              ? (currentTime - new Date(chat.lastCustomerMessageAt).getTime()) < 24 * 60 * 60 * 1000
+              : false;
+            return (
+              <ConversationItem 
+                key={chat.id} 
+                id={String(chat.id)}
+                name={chat.customerNumber} 
+                lastMessage={isWindowOpen ? 'Window Active' : 'Offline'}
+                time={formatTime(chat.lastCustomerMessageAt || chat.createdAt)}
+                avatarColor="bg-[#128C7E]"
+              />
+            );
+          })
         )}
       </div>
 

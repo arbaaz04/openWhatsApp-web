@@ -333,12 +333,28 @@ export async function requireAuth(
   next: Next
 ): Promise<void> {
   const authHeader = c.req.header('Authorization') ?? '';
+  let token = '';
 
-  if (!authHeader.startsWith('Bearer ')) {
-    throw new ApiError(401, 'Missing or malformed Authorization header', 'UNAUTHORIZED');
+  if (authHeader.startsWith('Bearer ')) {
+    token = authHeader.slice('Bearer '.length);
+  } else {
+    // Attempt to extract token from query parameter (for WebSocket connections)
+    const queryToken = typeof c.req.query === 'function' ? c.req.query('token') : undefined;
+    if (queryToken) {
+      token = queryToken;
+    } else {
+      // Fallback: Attempt to extract token from Sec-WebSocket-Protocol header
+      const protocolHeader = c.req.header('Sec-WebSocket-Protocol') ?? '';
+      if (protocolHeader) {
+        token = protocolHeader.split(',')[0].trim();
+      }
+    }
   }
 
-  const token = authHeader.slice('Bearer '.length);
+  if (!token) {
+    throw new ApiError(401, 'Missing or malformed Authorization header or token parameter', 'UNAUTHORIZED');
+  }
+
   const jwtSecret = c.env.SUPABASE_JWT_SECRET;
   const requestId = c.get('requestId');
 
