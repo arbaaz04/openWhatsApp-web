@@ -38,18 +38,22 @@ export const webhookService = {
             bodyText = msg.text?.body;
           } else if (msg.type === 'button') {
             bodyText = msg.button?.text;
-          } else if (msg.type === 'image') {
-            bodyText = msg.image?.caption ? `📷 [Image] ${msg.image.caption}` : '📷 [Image]';
-          } else if (msg.type === 'video') {
-            bodyText = msg.video?.caption ? `🎥 [Video] ${msg.video.caption}` : '🎥 [Video]';
-          } else if (msg.type === 'voice') {
-            bodyText = '🎙️ [Voice Message]';
-          } else if (msg.type === 'audio') {
-            bodyText = '🎵 [Audio Message]';
-          } else if (msg.type === 'document') {
-            bodyText = msg.document?.filename ? `📄 [Document] ${msg.document.filename}` : '📄 [Document]';
+          } else if (msg.type === 'image' && msg.image?.id) {
+            bodyText = `[MEDIA:image:${msg.image.id}]${msg.image.caption || ''}`;
+          } else if (msg.type === 'video' && msg.video?.id) {
+            bodyText = `[MEDIA:video:${msg.video.id}]${msg.video.caption || ''}`;
+          } else if (msg.type === 'voice' && msg.voice?.id) {
+            bodyText = `[MEDIA:voice:${msg.voice.id}]`;
+          } else if (msg.type === 'audio' && msg.audio?.id) {
+            bodyText = `[MEDIA:audio:${msg.audio.id}]`;
+          } else if (msg.type === 'document' && msg.document?.id) {
+            bodyText = `[MEDIA:document:${msg.document.id}]${msg.document.filename || ''}`;
           } else if (msg.type) {
             bodyText = `[${msg.type.charAt(0).toUpperCase() + msg.type.slice(1)} Message]`;
+          }
+
+          if (bodyText && msg.context?.id) {
+            bodyText = `[REPLY:${msg.context.id}]${bodyText}`;
           }
 
           if (!phoneNumberId || !customerPhone || !bodyText) {
@@ -91,6 +95,7 @@ export const webhookService = {
                       bodyText,
                       timestamp: new Date().toISOString(),
                       phoneNumberId,
+                      wamid: msg.id,
                     }),
                   })
                 );

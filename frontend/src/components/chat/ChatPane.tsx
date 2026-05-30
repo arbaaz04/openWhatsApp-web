@@ -11,6 +11,7 @@ import type { Message as BubbleMessage } from './MessageBubble';
 
 import { useWebSocket } from '../../contexts/WebSocketContext';
 import { getMessages, putMessages, putSingleMessage } from '../../lib/db';
+import { parseMessageBody } from '../../lib/messageParser';
 
 interface ChatMessage {
   id: string;
@@ -20,6 +21,7 @@ interface ChatMessage {
   time: string;
   type?: 'text' | 'business';
   replyTo?: string; // ID of message replied to
+  externalId?: string;
 }
 
 export function ChatPane() {
@@ -80,12 +82,13 @@ export function ChatPane() {
             // But here we rely on the messages.
             
             // Backend returns newest first, we want oldest first for display
-            const formatted = data.messages.map((m: { id: number; body: string | null; direction: string; createdAt: string }) => ({
+            const formatted = data.messages.map((m: { id: number; body: string | null; direction: string; createdAt: string; externalId?: string | null }) => ({
               id: String(m.id),
               body: m.body || '',
               direction: m.direction === 'echo' ? 'outgoing' : m.direction,
               time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              senderName: m.direction === 'incoming' ? 'Customer' : undefined
+              senderName: m.direction === 'incoming' ? 'Customer' : undefined,
+              externalId: m.externalId || undefined
             })).reverse();
             setMessages(formatted);
             putMessages(userId, conversationId, formatted);
@@ -168,7 +171,8 @@ export function ChatPane() {
             body: data.bodyText || data.body || (data.type === 'outgoing' && data.wamid ? 'Template Message' : ''),
             direction: data.type === 'incoming' ? 'incoming' : 'outgoing',
             time: new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            senderName: data.type === 'incoming' ? 'Customer' : undefined
+            senderName: data.type === 'incoming' ? 'Customer' : undefined,
+            externalId: data.wamid || undefined
           };
 
           setMessages(prev => {
@@ -202,7 +206,7 @@ export function ChatPane() {
     setReplyingTo({ id: msg.id, body: msg.body, senderName: msg.senderName });
   };
 
-  const handleSendMessage = async (body: string) => {
+  const handleSendMessage = async (body: string, replyToId?: string) => {
     const userId = session?.user?.id;
     if (!session || !userId || !conversationId) return;
     try {
@@ -215,7 +219,8 @@ export function ChatPane() {
         },
         body: JSON.stringify({ 
           body,
-          type: 'text'
+          type: 'text',
+          replyToMessageId: replyToId
         })
       });
       
@@ -223,23 +228,31 @@ export function ChatPane() {
         const data = await res.json();
         // The WebSocket will broadcast this back to us as well, but we can optimistically update
         if (data.success && !messages.find(m => m.id === String(data.messageId))) {
+            const replyMsg = replyToId ? messages.find(m => m.id === replyToId) : null;
+            const dbBody = replyMsg ? `[REPLY:${replyMsg.externalId || ''}]${body}` : body;
             const newMessage: ChatMessage = {
               id: String(data.messageId),
-              body,
+              body: dbBody,
               direction: 'outgoing',
-              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              externalId: data.wamid || undefined
             };
             setMessages(prev => [...prev, newMessage]);
             putSingleMessage(userId, conversationId, newMessage);
             setReplyingTo(null);
             setTimeout(scrollToBottom, 100);
         }
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        const errorMsg = errorData.error?.message || errorData.message || 'Failed to send message';
+        alert(`Error: ${errorMsg}`);
       }
     } catch (err) {
       console.error('Failed to send message:', err);
+      alert('Error: Network connection failure.');
     }
   };
-
+ 
   const handleSendTemplate = async (payload: Record<string, unknown>) => {
     const userId = session?.user?.id;
     if (!session || !userId || !conversationId) return;
@@ -248,7 +261,7 @@ export function ChatPane() {
       const template = payload.template as { name: string };
       const templateName = template.name;
       const bodyText = `Sent Template: ${templateName.replaceAll('_', ' ')}`;
-
+ 
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
       const res = await fetch(`${apiUrl}/api/conversations/${conversationId}/messages`, {
         method: 'POST',
@@ -270,15 +283,21 @@ export function ChatPane() {
               id: String(data.messageId),
               body: bodyText,
               direction: 'outgoing',
-              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              externalId: data.wamid || undefined
             };
             setMessages(prev => [...prev, newMessage]);
             putSingleMessage(userId, conversationId, newMessage);
             setTimeout(scrollToBottom, 100);
         }
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        const errorMsg = errorData.error?.message || errorData.message || 'Failed to send template';
+        alert(`Error: ${errorMsg}`);
       }
     } catch (err) {
       console.error('Failed to send template:', err);
+      alert('Error: Network connection failure.');
     }
   };
 
@@ -363,15 +382,47 @@ export function ChatPane() {
         ) : (
           <>
             <DateSeparator label="Conversation Started" isEvent />
-            {messages.map((m) => (
-              <MessageBubble
-                key={m.id}
-                {...m}
-                replyTo={null}
-                onReply={handleReply}
-                avatarInitial="C"
-              />
-            ))}
+            {messages.map((m) => {
+              const parsed = parseMessageBody(m.body);
+              
+              let replyToMessage: BubbleMessage | null = null;
+              if (parsed.replyToWamid) {
+                const found = messages.find(
+                  (msg) => msg.externalId === parsed.replyToWamid || msg.id === parsed.replyToWamid
+                );
+                if (found) {
+                  const foundParsed = parseMessageBody(found.body);
+                  replyToMessage = {
+                    id: found.id,
+                    body: foundParsed.cleanBody,
+                    senderName: found.senderName,
+                  };
+                } else {
+                  replyToMessage = {
+                    id: parsed.replyToWamid,
+                    body: 'Original Message',
+                    senderName: m.direction === 'incoming' ? 'Agent' : 'Customer',
+                  };
+                }
+              }
+
+              return (
+                <MessageBubble
+                  key={m.id}
+                  id={m.id}
+                  body={parsed.cleanBody}
+                  direction={m.direction}
+                  time={m.time}
+                  type={m.type}
+                  senderName={m.senderName}
+                  conversationId={conversationId}
+                  media={parsed.media}
+                  replyTo={replyToMessage}
+                  onReply={handleReply}
+                  avatarInitial="C"
+                />
+              );
+            })}
             <div ref={messagesEndRef} />
           </>
         )}

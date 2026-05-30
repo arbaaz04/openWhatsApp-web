@@ -19,8 +19,8 @@ import { createLogger } from './logger.js';
 // ---------------------------------------------------------------------------
 
 /** Bump this to adopt a newer Graph API version. */
-const META_API_VERSION = 'v25.0';
-const META_GRAPH_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
+export const META_API_VERSION = 'v25.0';
+export const META_GRAPH_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
 
 /**
  * How long to wait for a Meta API response before treating it as a failure.
@@ -256,7 +256,7 @@ export async function getTemplates(options: {
  * Wraps `fetch` with an AbortController timeout so hung connections don't
  * exhaust the Worker's CPU budget.
  */
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+export async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -277,7 +277,7 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
 }
 
 /** Extracts the Meta error detail from a Graph API error envelope. */
-function extractMetaError(json: Record<string, unknown>): MetaApiErrorDetail {
+export function extractMetaError(json: Record<string, unknown>): MetaApiErrorDetail {
   const error = (json.error as Record<string, unknown> | undefined) ?? {};
   return {
     code: typeof error.code === 'number' ? error.code : 0,

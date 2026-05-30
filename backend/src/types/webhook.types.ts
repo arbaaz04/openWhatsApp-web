@@ -15,16 +15,27 @@ const MetaButtonPayloadSchema = z.object({
 });
 
 const MetaImageSchema = z.object({
+  id: z.string().optional(),
   caption: z.string().optional(),
 });
 
 const MetaVideoSchema = z.object({
+  id: z.string().optional(),
   caption: z.string().optional(),
 });
 
 const MetaDocumentSchema = z.object({
+  id: z.string().optional(),
   filename: z.string().optional(),
   caption: z.string().optional(),
+});
+
+const MetaVoiceSchema = z.object({
+  id: z.string().optional(),
+});
+
+const MetaAudioSchema = z.object({
+  id: z.string().optional(),
 });
 
 const MetaMessageSchema = z.object({
@@ -37,6 +48,11 @@ const MetaMessageSchema = z.object({
   image: MetaImageSchema.optional(),
   video: MetaVideoSchema.optional(),
   document: MetaDocumentSchema.optional(),
+  voice: MetaVoiceSchema.optional(),
+  audio: MetaAudioSchema.optional(),
+  context: z.object({
+    id: z.string(),
+  }).optional(),
 });
 
 const MetaMetadataSchema = z.object({

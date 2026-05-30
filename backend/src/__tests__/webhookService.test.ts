@@ -97,15 +97,15 @@ describe('Webhook Service — Payload Processing', () => {
   it('should extract text from incoming media messages (image, video, voice, audio, document)', async () => {
     const payload = basePayload();
     payload.entry[0].changes[0].value.messages = [
-      { from: 'cust456', id: 'msg-img', timestamp: '1234567890', type: 'image', image: { caption: 'A nice view' } },
-      { from: 'cust456', id: 'msg-voc', timestamp: '1234567890', type: 'voice' },
+      { from: 'cust456', id: 'msg-img', timestamp: '1234567890', type: 'image', image: { id: 'media-img-123', caption: 'A nice view' } },
+      { from: 'cust456', id: 'msg-voc', timestamp: '1234567890', type: 'voice', voice: { id: 'media-voc-456' } },
     ];
 
     await webhookService.processPayload(db, payload);
 
     expect(messageRepository.processIncomingMessage).toHaveBeenCalledTimes(2);
-    expect(messageRepository.processIncomingMessage).toHaveBeenNthCalledWith(1, db, 'host123', 'cust456', '📷 [Image] A nice view', 'msg-img');
-    expect(messageRepository.processIncomingMessage).toHaveBeenNthCalledWith(2, db, 'host123', 'cust456', '🎙️ [Voice Message]', 'msg-voc');
+    expect(messageRepository.processIncomingMessage).toHaveBeenNthCalledWith(1, db, 'host123', 'cust456', '[MEDIA:image:media-img-123]A nice view', 'msg-img');
+    expect(messageRepository.processIncomingMessage).toHaveBeenNthCalledWith(2, db, 'host123', 'cust456', '[MEDIA:voice:media-voc-456]', 'msg-voc');
   });
 
   it('should extract text from button replies', async () => {
@@ -123,6 +123,30 @@ describe('Webhook Service — Payload Processing', () => {
     await webhookService.processPayload(db, payload);
 
     expect(messageRepository.processIncomingMessage).toHaveBeenCalledWith(db, 'host123', 'cust456', 'Yes please', 'msg3');
+  });
+
+  it('should extract reply context and prepend [REPLY:...] prefix', async () => {
+    const payload = basePayload();
+    payload.entry[0].changes[0].value.messages = [
+      {
+        from: 'cust456',
+        id: 'msg-reply',
+        timestamp: '1234567890',
+        type: 'text',
+        text: { body: 'I agree' },
+        context: { id: 'wamid-original-123' },
+      } as any,
+    ];
+
+    await webhookService.processPayload(db, payload);
+
+    expect(messageRepository.processIncomingMessage).toHaveBeenCalledWith(
+      db,
+      'host123',
+      'cust456',
+      '[REPLY:wamid-original-123]I agree',
+      'msg-reply'
+    );
   });
 
   it('should not throw if the repository throws — silently logs', async () => {

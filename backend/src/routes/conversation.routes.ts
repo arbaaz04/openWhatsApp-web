@@ -12,9 +12,9 @@ import { createLogger } from '../utils/logger.js';
 import { ApiError } from '../utils/errors.js';
 import { rateLimiter } from '../utils/rateLimiter.js';
 import { type DrizzleDb } from '../db/index.js';
-import { conversations, channels, teamMembers } from '../db/schema.js';
+import { conversations, channels, teamMembers, messages } from '../db/schema.js';
 import { messageRepository } from '../repositories/messageRepository.js';
-import { sendWhatsAppMessage } from '../utils/metaApiClient.js';
+import { sendWhatsAppMessage, fetchWithTimeout, extractMetaError, META_GRAPH_BASE } from '../utils/metaApiClient.js';
 import { decrypt } from '../utils/encryption.js';
 import { eq, and, desc } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
@@ -388,6 +388,7 @@ const sendMessageBody = z.object({
    * If omitted, a basic text payload is auto-generated for 'text' type.
    */
   payload: z.record(z.string(), z.unknown()).optional(),
+  replyToMessageId: z.string().optional(),
 });
 
 const sendMessageRoute = createRoute({
@@ -429,10 +430,26 @@ conversationRouter.openapi(sendMessageRoute, async (c) => {
   const log = createLogger({ requestId: c.get('requestId') });
   const userId = c.get('userId');
   const conversationId = parseInt(c.req.param('conversationId'), 10);
-  const { type, body, payload } = c.req.valid('json');
+  const { type, body, payload, replyToMessageId } = c.req.valid('json');
 
   // 1. Resolve conversation and enforce team ownership in one DB query
   const row = await resolveAndAuthorize(db, conversationId, userId);
+
+  // 1.2 Resolve original message wamid for reply context
+  let replyWamid: string | undefined;
+  if (replyToMessageId) {
+    const replyIdNum = parseInt(replyToMessageId, 10);
+    if (!isNaN(replyIdNum)) {
+      const [replyMsg] = await db
+        .select({ externalId: messages.externalId })
+        .from(messages)
+        .where(eq(messages.id, replyIdNum))
+        .limit(1);
+      if (replyMsg?.externalId) {
+        replyWamid = replyMsg.externalId;
+      }
+    }
+  }
 
   // 1.5 Check WhatsApp 24-hour service window expiry
   const isWindowOpen = row.lastCustomerMessageAt
@@ -464,7 +481,15 @@ conversationRouter.openapi(sendMessageRoute, async (c) => {
     bodyLength: body.length,
   });
 
-  const messagePayload = payload ?? (type === 'text' ? { text: { body, preview_url: false } } : {});
+  let messagePayload = payload ?? (type === 'text' ? { text: { body, preview_url: false } } : {});
+  if (replyWamid) {
+    messagePayload = {
+      ...messagePayload,
+      context: {
+        message_id: replyWamid,
+      },
+    };
+  }
 
   const { wamid, recipientWaId } = await sendWhatsAppMessage({
     phoneNumberId: row.whatsappId,
@@ -481,10 +506,11 @@ conversationRouter.openapi(sendMessageRoute, async (c) => {
   });
 
   // 4. Persist the outbound message record (after Meta confirms it)
+  const dbBody = replyWamid ? `[REPLY:${replyWamid}]${body}` : body;
   const { messageId } = await messageRepository.createOutboundMessage(
     db,
     conversationId,
-    body,
+    dbBody,
     wamid,
     userId
   );
@@ -506,7 +532,7 @@ conversationRouter.openapi(sendMessageRoute, async (c) => {
           messageId,
           wamid,
           conversationId,
-          body,
+          body: dbBody,
           direction: 'outgoing',
           status: 'sent',
           timestamp: new Date().toISOString(),
@@ -530,30 +556,108 @@ conversationRouter.openapi(sendMessageRoute, async (c) => {
 
   // 6. Dispatch `conversation.message.sent` to user-registered webhooks.
   //    Fire-and-forget via waitUntil so it never blocks the HTTP response.
-    if (c.env.DATA_ENCRYPTION_KEY) {
-      const { webhookDeliveryService } = await import('../services/webhookDeliveryService.js');
-      c.executionCtx?.waitUntil(
-        webhookDeliveryService.dispatchEvent({
-          eventName: 'conversation.message.sent',
+  if (c.env.DATA_ENCRYPTION_KEY) {
+    const { webhookDeliveryService } = await import('../services/webhookDeliveryService.js');
+    c.executionCtx?.waitUntil(
+      webhookDeliveryService.dispatchEvent({
+        eventName: 'conversation.message.sent',
+        channelId: row.channelId,
+        eventData: {
+          conversationId,
+          messageId,
           channelId: row.channelId,
-          eventData: {
-            conversationId,
-            messageId,
-            channelId: row.channelId,
-            customerNumber: row.customerNumber,
-            body,
-            direction: 'outgoing',
-            wamid,
-            timestamp: new Date().toISOString(),
-          },
-          encryptionKey: c.env.DATA_ENCRYPTION_KEY,
-          env: { USER_WEBHOOK_QUEUE: c.env.USER_WEBHOOK_QUEUE },
-          db,
-        })
-      );
-    }
+          customerNumber: row.customerNumber,
+          body: dbBody,
+          direction: 'outgoing',
+          wamid,
+          timestamp: new Date().toISOString(),
+        },
+        encryptionKey: c.env.DATA_ENCRYPTION_KEY,
+        env: { USER_WEBHOOK_QUEUE: c.env.USER_WEBHOOK_QUEUE },
+        db,
+      })
+    );
+  }
 
   return c.json({ success: true as const, messageId, wamid }, 201);
+});
+
+// ---------------------------------------------------------------------------
+// GET /:conversationId/media/:mediaId — proxy binary media attachments from Meta
+// ---------------------------------------------------------------------------
+
+const getMediaRoute = createRoute({
+  method: 'get',
+  path: '/:conversationId/media/:mediaId',
+  request: {
+    params: z.object({
+      conversationId: z.string().regex(/^\d+$/, 'Must be a numeric ID'),
+      mediaId: z.string().min(1, 'Must be a valid media ID'),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'The binary media stream',
+    },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Conversation or media not found' },
+  },
+});
+
+conversationRouter.openapi(getMediaRoute, async (c) => {
+  const db = c.get('db');
+  const userId = c.get('userId');
+  const conversationId = parseInt(c.req.param('conversationId'), 10);
+  const mediaId = c.req.param('mediaId');
+
+  // 1. Enforce team ownership & RBAC validation
+  const row = await resolveAndAuthorize(db, conversationId, userId);
+
+  if (!row.accessToken) {
+    throw new ApiError(503, 'Channel is not configured', 'MISCONFIGURED');
+  }
+
+  const accessToken = await decrypt(row.accessToken, c.env.DATA_ENCRYPTION_KEY);
+
+  // 2. Fetch media URL from Meta Graph API
+  const metaUrl = `${META_GRAPH_BASE}/${mediaId}`;
+  const response = await fetchWithTimeout(metaUrl, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  if (!response.ok) {
+    const errorJson = await response.json().catch(() => ({})) as Record<string, unknown>;
+    const err = extractMetaError(errorJson);
+    throw new ApiError(404, `Meta media retrieval failed: ${err.message}`, 'NOT_FOUND');
+  }
+
+  const json = await response.json() as { url: string; mime_type?: string };
+  const downloadUrl = json.url;
+
+  if (!downloadUrl) {
+    throw new ApiError(404, 'Media URL not found in Meta response', 'NOT_FOUND');
+  }
+
+  // 3. Download and stream the media content
+  const mediaRes = await fetchWithTimeout(downloadUrl, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!mediaRes.ok) {
+    throw new ApiError(502, 'Failed to download media content from Meta', 'BAD_GATEWAY');
+  }
+
+  return new Response(mediaRes.body, {
+    status: 200,
+    headers: {
+      'Content-Type': mediaRes.headers.get('Content-Type') || json.mime_type || 'application/octet-stream',
+      'Cache-Control': 'public, max-age=31536000', // cache media aggressively
+    },
+  });
 });
 
 export default conversationRouter;
