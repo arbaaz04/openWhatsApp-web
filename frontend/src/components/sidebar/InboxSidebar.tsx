@@ -141,7 +141,7 @@ export function InboxSidebar() {
     const token = session?.access_token || '';
 
     let isClosedByUser = false;
-    const reconnectTimeouts: { [key: string]: any } = {};
+    const reconnectTimeouts: { [key: string]: ReturnType<typeof setTimeout> } = {};
 
     uniqueWhatsappIds.forEach(whatsappId => {
       const socketUrl = `${wsUrl}/api/ws/inbox?phoneNumberId=${whatsappId}&token=${encodeURIComponent(token)}`;
@@ -250,6 +250,7 @@ export function InboxSidebar() {
       sockets.forEach(s => s.close());
       Object.values(reconnectTimeouts).forEach(t => clearTimeout(t));
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, whatsappIdsKey]); 
 
   return (

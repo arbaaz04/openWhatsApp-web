@@ -128,7 +128,7 @@ export function ChatPane() {
     const socketUrl = `${wsUrl}/api/ws/inbox?phoneNumberId=${whatsappId}&conversationId=${conversationId}&token=${encodeURIComponent(token)}`;
 
     let socket: WebSocket | null = null;
-    let reconnectTimeout: any = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let retryCount = 0;
     let isClosedByUser = false;
 
