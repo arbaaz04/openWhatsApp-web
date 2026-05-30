@@ -150,18 +150,15 @@ export function InboxSidebar() {
 
       function connect() {
         if (isClosedByUser) return;
-        console.log(`[WebSocket] Connecting to Sidebar WS for ${whatsappId} (attempt ${retryCount + 1}):`, socketUrl);
         socket = new WebSocket(socketUrl);
         
         socket.onopen = () => {
-          console.log(`[WebSocket] Sidebar WS connected for channel: ${whatsappId}`);
           retryCount = 0;
         };
 
         socket.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            console.log('[WebSocket] Sidebar WS received message:', data);
             if (data.type === 'incoming' || data.type === 'outgoing') {
               setConversations(prev => {
                 const next = [...prev];
@@ -222,11 +219,9 @@ export function InboxSidebar() {
           }
         };
 
-        socket.onclose = (event) => {
-          console.log(`[WebSocket] Sidebar WS closed for channel ${whatsappId}:`, event.code, event.reason);
+        socket.onclose = () => {
           if (!isClosedByUser) {
             const delay = Math.min(1000 * Math.pow(2, retryCount), 15000);
-            console.log(`[WebSocket] Sidebar WS reconnecting for ${whatsappId} in ${delay}ms...`);
             retryCount++;
             reconnectTimeouts[whatsappId] = setTimeout(connect, delay);
           }
@@ -245,7 +240,6 @@ export function InboxSidebar() {
     });
 
     return () => {
-      console.log('[WebSocket] Cleaning up and closing all Sidebar WS');
       isClosedByUser = true;
       sockets.forEach(s => s.close());
       Object.values(reconnectTimeouts).forEach(t => clearTimeout(t));

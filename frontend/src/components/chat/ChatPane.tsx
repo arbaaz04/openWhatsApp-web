@@ -134,11 +134,9 @@ export function ChatPane() {
 
     function connect() {
       if (isClosedByUser) return;
-      console.log(`[WebSocket] Connecting to ChatPane WS (attempt ${retryCount + 1}):`, socketUrl);
       socket = new WebSocket(socketUrl);
 
       socket.onopen = () => {
-        console.log('[WebSocket] ChatPane connection opened successfully');
         setIsWsConnected(true);
         retryCount = 0; // Reset retry count on successful connection
       };
@@ -146,7 +144,6 @@ export function ChatPane() {
       socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log('[WebSocket] Received message:', data);
           
           // Handle incoming messages from Meta or self-broadcasts
           if (data.type === 'incoming' || data.type === 'outgoing') {
@@ -179,12 +176,10 @@ export function ChatPane() {
         }
       };
 
-      socket.onclose = (event) => {
-        console.log('[WebSocket] ChatPane connection closed:', event.code, event.reason);
+      socket.onclose = () => {
         setIsWsConnected(false);
         if (!isClosedByUser) {
           const delay = Math.min(1000 * Math.pow(2, retryCount), 15000);
-          console.log(`[WebSocket] Reconnecting in ${delay}ms...`);
           retryCount++;
           reconnectTimeout = setTimeout(connect, delay);
         }
@@ -199,7 +194,6 @@ export function ChatPane() {
     connect();
 
     return () => {
-      console.log('[WebSocket] Cleaning up and closing ChatPane WS');
       isClosedByUser = true;
       if (socket) socket.close();
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
