@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Search, Edit, Smartphone } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
 import { ConversationItem } from './ConversationItem';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { NewChatModal } from './NewChatModal';
+
+import { useWebSocket } from '../../contexts/WebSocketContext';
 
 function formatTime(dateStr: string | null) {
   if (!dateStr) return '';
@@ -27,14 +28,9 @@ interface Conversation {
 }
 
 export function InboxSidebar() {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [numbersCount, setNumbersCount] = useState<number | null>(null);
+  const { conversations, loadingConversations, channels } = useWebSocket();
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { session, teams } = useAuth();
-  const teamId = teams[0]?.teamId;
-  const [channels, setChannels] = useState<{ id: number; whatsappId: string }[]>([]);
-  const [currentTime, setCurrentTime] = useState(Date.now());
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
   const navigate = useNavigate();
 
   const handleStartChat = (phone: string) => {
@@ -53,69 +49,6 @@ export function InboxSidebar() {
     }
   };
 
-  useEffect(() => {
-    async function fetchData() {
-      if (!session) return;
-      try {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
-        
-        // 1. Fetch Stats to check for linked numbers
-        const statsRes = await fetch(`${apiUrl}/api/dashboard/stats`, {
-          headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
-        if (statsRes.ok) {
-          const statsData = await statsRes.json();
-          if (statsData.success) {
-            setNumbersCount(statsData.stats.numbersCount);
-          }
-        }
-
-        // 2. Fetch Conversations
-        const res = await fetch(`${apiUrl}/api/conversations/`, {
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`
-          }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success) {
-            setConversations(data.conversations);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to fetch data:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchData();
-  }, [session]);
-
-  // Fetch linked channels/numbers to ensure we connect WebSockets even if there are 0 conversations
-  useEffect(() => {
-    async function fetchChannels() {
-      if (!session || !teamId) return;
-      try {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
-        const res = await fetch(`${apiUrl}/api/teams/${teamId}/channels`, {
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`
-          }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success) {
-            setChannels(data.channels);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to fetch channels in sidebar:', err);
-      }
-    }
-    fetchChannels();
-  }, [session, teamId]);
-
   // Dynamic ticking timer to update the window expiry in real-time
   useEffect(() => {
     const timer = setInterval(() => {
@@ -123,129 +56,6 @@ export function InboxSidebar() {
     }, 10000); // 10 seconds
     return () => clearInterval(timer);
   }, []);
-
-  const uniqueWhatsappIds = [...new Set([
-    ...channels.map(c => c.whatsappId).filter(Boolean),
-    ...conversations.map(c => c.whatsappId).filter(Boolean)
-  ])];
-  const whatsappIdsKey = uniqueWhatsappIds.join(',');
-
-  // WebSocket for real-time sidebar updates
-  useEffect(() => {
-    if (!session || uniqueWhatsappIds.length === 0) return;
-
-    const sockets: WebSocket[] = [];
-    const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
-    const cleanApiUrl = rawApiUrl.replace(/\/$/, '');
-    const wsUrl = cleanApiUrl.replace(/^http/, 'ws');
-    const token = session?.access_token || '';
-
-    let isClosedByUser = false;
-    const reconnectTimeouts: { [key: string]: ReturnType<typeof setTimeout> } = {};
-
-    uniqueWhatsappIds.forEach(whatsappId => {
-      const socketUrl = `${wsUrl}/api/ws/inbox?phoneNumberId=${whatsappId}&token=${encodeURIComponent(token)}`;
-      let socket: WebSocket | null = null;
-      let retryCount = 0;
-
-      function connect() {
-        if (isClosedByUser) return;
-        socket = new WebSocket(socketUrl);
-        
-        socket.onopen = () => {
-          retryCount = 0;
-        };
-
-        socket.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === 'incoming' || data.type === 'outgoing') {
-              setConversations(prev => {
-                const next = [...prev];
-                const idx = next.findIndex(c => String(c.id) === String(data.conversationId));
-                
-                if (idx !== -1) {
-                  // Update existing conversation
-                  const isIncoming = data.type === 'incoming';
-                  const nextLastCustomerMessageAt = isIncoming ? data.timestamp : next[idx].lastCustomerMessageAt;
-                  const isWindowOpen = nextLastCustomerMessageAt
-                    ? (Date.now() - new Date(nextLastCustomerMessageAt).getTime()) < 24 * 60 * 60 * 1000
-                    : false;
-
-                  next[idx] = {
-                    ...next[idx],
-                    lastCustomerMessageAt: nextLastCustomerMessageAt,
-                    isWindowOpen
-                  };
-                  // Move to top
-                  const [item] = next.splice(idx, 1);
-                  next.unshift(item);
-                } else {
-                  // This is a new conversation started while the user is inside.
-                  // Fetch the new conversation detail and prepend it to the list.
-                  const fetchUrl = `${cleanApiUrl}/api/conversations/${data.conversationId}`;
-                  fetch(fetchUrl, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                  })
-                    .then(res => res.json())
-                    .then(resData => {
-                      if (resData.success && resData.conversation) {
-                        setConversations(current => {
-                          // Avoid duplicates
-                          if (current.find(c => String(c.id) === String(resData.conversation.id))) {
-                            return current;
-                          }
-                          return [
-                            {
-                              id: resData.conversation.id,
-                              customerNumber: resData.conversation.customerNumber,
-                              whatsappId: resData.conversation.whatsappId || '',
-                              isWindowOpen: resData.conversation.isWindowOpen,
-                              lastCustomerMessageAt: resData.conversation.lastCustomerMessageAt,
-                              createdAt: new Date().toISOString()
-                            },
-                            ...current
-                          ];
-                        });
-                      }
-                    })
-                    .catch(err => console.error('[WebSocket] Failed to fetch new conversation detail:', err));
-                }
-                return next;
-              });
-            }
-          } catch (e) {
-            console.error('[WebSocket] Sidebar WS error parsing:', e);
-          }
-        };
-
-        socket.onclose = () => {
-          if (!isClosedByUser) {
-            const delay = Math.min(1000 * Math.pow(2, retryCount), 15000);
-            retryCount++;
-            reconnectTimeouts[whatsappId] = setTimeout(connect, delay);
-          }
-        };
-
-        socket.onerror = (err) => {
-          console.error(`[WebSocket] Sidebar WS error for channel ${whatsappId}:`, err);
-        };
-
-        if (socket) {
-          sockets.push(socket);
-        }
-      }
-
-      connect();
-    });
-
-    return () => {
-      isClosedByUser = true;
-      sockets.forEach(s => s.close());
-      Object.values(reconnectTimeouts).forEach(t => clearTimeout(t));
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, whatsappIdsKey]); 
 
   return (
     <div className="w-[280px] h-full bg-white border-r border-[#E5E7EB] flex flex-col shrink-0">
@@ -273,9 +83,9 @@ export function InboxSidebar() {
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 flex flex-col">
-        {loading ? (
+        {loadingConversations ? (
           <div className="px-4 py-8 text-center text-[13px] text-gray-400">Loading conversations...</div>
-        ) : numbersCount === 0 ? (
+        ) : channels.length === 0 ? (
           <div className="px-4 py-12 text-center bg-gray-50/50 mx-3 my-4 rounded-xl border border-dashed border-gray-200">
             <div className="w-10 h-10 bg-[#128C7E]/5 text-[#128C7E] rounded-full flex items-center justify-center mx-auto mb-3">
               <Smartphone className="w-5 h-5" />

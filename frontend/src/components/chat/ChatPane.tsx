@@ -9,6 +9,8 @@ import { useAuth } from '../../contexts/AuthContext';
 
 import type { Message as BubbleMessage } from './MessageBubble';
 
+import { useWebSocket } from '../../contexts/WebSocketContext';
+
 interface ChatMessage {
   id: string;
   body: string;
@@ -28,6 +30,7 @@ export function ChatPane() {
   const [customerNumber, setCustomerNumber] = useState<string>('');
   const { session } = useAuth();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { isWsConnected, registerMessageListener } = useWebSocket();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -81,7 +84,6 @@ export function ChatPane() {
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const [lastCustomerMessageAt, setLastCustomerMessageAt] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
-  const [isWsConnected, setIsWsConnected] = useState(false);
 
   // Dynamic ticking timer to update the window expiry in real-time
   useEffect(() => {
@@ -116,89 +118,38 @@ export function ChatPane() {
      fetchConvMeta();
   }, [conversationId, session]);
 
-  // WebSocket for real-time updates
+  // Subscribe to real-time events from the global WebSocket provider
   useEffect(() => {
-    if (!session || !whatsappId || !conversationId) return;
+    if (!whatsappId || !conversationId) return;
 
-    const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
-    const cleanApiUrl = rawApiUrl.replace(/\/$/, '');
-    const wsUrl = cleanApiUrl.replace(/^http/, 'ws');
-    const token = session?.access_token || '';
+    const unsubscribe = registerMessageListener((data) => {
+      if (data.type === 'incoming' || data.type === 'outgoing') {
+        if (String(data.conversationId) === String(conversationId)) {
+          const newMessage: ChatMessage = {
+            id: String(data.messageId),
+            body: data.bodyText || data.body || (data.type === 'outgoing' && data.wamid ? 'Template Message' : ''),
+            direction: data.type === 'incoming' ? 'incoming' : 'outgoing',
+            time: new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            senderName: data.type === 'incoming' ? 'Customer' : undefined
+          };
 
-    const socketUrl = `${wsUrl}/api/ws/inbox?phoneNumberId=${whatsappId}&conversationId=${conversationId}&token=${encodeURIComponent(token)}`;
+          setMessages(prev => {
+            // Deduplicate by message ID
+            if (prev.find(m => m.id === newMessage.id)) return prev;
+            return [...prev, newMessage];
+          });
 
-    let socket: WebSocket | null = null;
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-    let retryCount = 0;
-    let isClosedByUser = false;
-
-    function connect() {
-      if (isClosedByUser) return;
-      socket = new WebSocket(socketUrl);
-
-      socket.onopen = () => {
-        setIsWsConnected(true);
-        retryCount = 0; // Reset retry count on successful connection
-      };
-
-      socket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          
-          // Handle incoming messages from Meta or self-broadcasts
-          if (data.type === 'incoming' || data.type === 'outgoing') {
-            // Verify it matches the current conversation
-            if (String(data.conversationId) === String(conversationId)) {
-              const newMessage: ChatMessage = {
-                id: String(data.messageId),
-                body: data.bodyText || data.body || (data.type === 'outgoing' && data.wamid ? 'Template Message' : ''),
-                direction: data.type === 'incoming' ? 'incoming' : 'outgoing',
-                time: new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                senderName: data.type === 'incoming' ? 'Customer' : undefined
-              };
-
-              setMessages(prev => {
-                // Deduplicate by message ID
-                if (prev.find(m => m.id === newMessage.id)) return prev;
-                return [...prev, newMessage];
-              });
-
-              // Update session window in real-time when a customer message is received
-              if (data.type === 'incoming') {
-                setLastCustomerMessageAt(data.timestamp);
-              }
-
-              setTimeout(scrollToBottom, 100);
-            }
+          if (data.type === 'incoming') {
+            setLastCustomerMessageAt(data.timestamp);
           }
-        } catch (err) {
-          console.error('[WebSocket] Failed to parse WebSocket message:', err);
+
+          setTimeout(scrollToBottom, 100);
         }
-      };
+      }
+    });
 
-      socket.onclose = () => {
-        setIsWsConnected(false);
-        if (!isClosedByUser) {
-          const delay = Math.min(1000 * Math.pow(2, retryCount), 15000);
-          retryCount++;
-          reconnectTimeout = setTimeout(connect, delay);
-        }
-      };
-
-      socket.onerror = (err) => {
-        console.error('[WebSocket] ChatPane connection error:', err);
-        setIsWsConnected(false);
-      };
-    }
-
-    connect();
-
-    return () => {
-      isClosedByUser = true;
-      if (socket) socket.close();
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
-    };
-  }, [whatsappId, conversationId, session]);
+    return unsubscribe;
+  }, [whatsappId, conversationId, registerMessageListener]);
 
   // Calculate session expiration
   const isExpired = !lastCustomerMessageAt || 

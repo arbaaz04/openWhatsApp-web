@@ -12,6 +12,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Auth } from './pages/Auth';
 import { MetaCallback } from './pages/MetaCallback';
 import { ComingSoon } from './components/layout/ComingSoon';
+import { WebSocketProvider } from './contexts/WebSocketContext';
 import './index.css';
 
 // A guard component to protect private routes
@@ -66,43 +67,45 @@ function EmptyChat() {
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/auth" element={<Auth />} />
-          <Route path="/auth/meta-callback" element={<MetaCallback />} />
-          
-          <Route element={<AuthGuard><DashboardLayout /></AuthGuard>}>
+      <WebSocketProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/auth" element={<Auth />} />
+            <Route path="/auth/meta-callback" element={<MetaCallback />} />
             
-            {/* Dashboard Module */}
-            <Route path="/dashboard" element={<Dashboard />} />
-            
-            {/* Inbox Module */}
-            <Route path="/" element={<InboxLayout />}>
-              <Route index element={<EmptyChat />} />
-              <Route path="c/:conversationId" element={<ChatPane />} />
+            <Route element={<AuthGuard><DashboardLayout /></AuthGuard>}>
+              
+              {/* Dashboard Module */}
+              <Route path="/dashboard" element={<Dashboard />} />
+              
+              {/* Inbox Module */}
+              <Route path="/" element={<InboxLayout />}>
+                <Route index element={<EmptyChat />} />
+                <Route path="c/:conversationId" element={<ChatPane />} />
+              </Route>
+              
+              {/* Configuration Modules */}
+              <Route path="/phones" element={<PhoneNumbers />} />
+              <Route path="/api-keys" element={<ApiKeys />} />
+              <Route path="/flows" element={<Flows />} />
+              <Route path="/templates" element={<Templates />} />
+              
+              {/* Coming Soon / Placeholders */}
+              <Route path="/search" element={<ComingSoon title="Search Module" />} />
+              <Route path="/add-number" element={<PhoneNumbers />} />
+              <Route path="/integrate" element={<ComingSoon title="Integration Hub" />} />
+              <Route path="/webhooks" element={<Webhooks />} />
+              <Route path="/workflows" element={<ComingSoon title="Workflows Engine" />} />
+              <Route path="/functions" element={<ComingSoon title="Cloud Functions" />} />
+              <Route path="/team" element={<ComingSoon title="Team Management" />} />
+              <Route path="/billing" element={<ComingSoon title="Billing & Plans" />} />
+              <Route path="/help" element={<ComingSoon title="Help & Documentation" />} />
+              <Route path="/profile" element={<ComingSoon title="Profile Settings" />} />
+              
             </Route>
-            
-            {/* Configuration Modules */}
-            <Route path="/phones" element={<PhoneNumbers />} />
-            <Route path="/api-keys" element={<ApiKeys />} />
-            <Route path="/flows" element={<Flows />} />
-            <Route path="/templates" element={<Templates />} />
-            
-            {/* Coming Soon / Placeholders */}
-            <Route path="/search" element={<ComingSoon title="Search Module" />} />
-            <Route path="/add-number" element={<PhoneNumbers />} />
-            <Route path="/integrate" element={<ComingSoon title="Integration Hub" />} />
-            <Route path="/webhooks" element={<Webhooks />} />
-            <Route path="/workflows" element={<ComingSoon title="Workflows Engine" />} />
-            <Route path="/functions" element={<ComingSoon title="Cloud Functions" />} />
-            <Route path="/team" element={<ComingSoon title="Team Management" />} />
-            <Route path="/billing" element={<ComingSoon title="Billing & Plans" />} />
-            <Route path="/help" element={<ComingSoon title="Help & Documentation" />} />
-            <Route path="/profile" element={<ComingSoon title="Profile Settings" />} />
-            
-          </Route>
-        </Routes>
-      </BrowserRouter>
+          </Routes>
+        </BrowserRouter>
+      </WebSocketProvider>
     </AuthProvider>
   );
 }
