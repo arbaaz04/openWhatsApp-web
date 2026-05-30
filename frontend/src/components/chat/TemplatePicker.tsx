@@ -58,7 +58,8 @@ export function TemplatePicker({ isOpen, onClose, onSelect, channelId, teamId }:
     if (isOpen && channelId && teamId && session) {
       fetchTemplates();
     }
-  }, [isOpen, channelId, teamId, session]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, channelId, teamId, session?.user?.id]);
 
   const filtered = templates.filter(t => 
     t.name.toLowerCase().includes(search.toLowerCase())

@@ -17,7 +17,7 @@ export interface ChatMessage {
   replyTo?: string;
 }
 
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 function getDbName(userId: string): string {
   return `whatflow_db_${userId}`;
@@ -36,6 +36,9 @@ export function openUserDb(userId: string): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains('messages')) {
         const store = db.createObjectStore('messages', { keyPath: 'id' });
         store.createIndex('conversationId', 'conversationId', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('dashboard')) {
+        db.createObjectStore('dashboard');
       }
     };
 
@@ -206,5 +209,51 @@ export async function putSingleMessage(userId: string, conversationId: string, m
     });
   } catch (err) {
     console.error('IndexedDB putSingleMessage error:', err);
+  }
+}
+export async function putDashboardData(userId: string, key: 'stats' | 'recentMessages', data: unknown): Promise<void> {
+  try {
+    const db = await openUserDb(userId);
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('dashboard', 'readwrite');
+      const store = tx.objectStore('dashboard');
+      store.put(data, key);
+
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+
+      tx.onerror = () => {
+        db.close();
+        reject(tx.error);
+      };
+    });
+  } catch (err) {
+    console.error('IndexedDB putDashboardData error:', err);
+  }
+}
+
+export async function getDashboardData(userId: string, key: 'stats' | 'recentMessages'): Promise<unknown> {
+  try {
+    const db = await openUserDb(userId);
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('dashboard', 'readonly');
+      const store = tx.objectStore('dashboard');
+      const request = store.get(key);
+
+      request.onsuccess = () => {
+        db.close();
+        resolve(request.result);
+      };
+
+      request.onerror = () => {
+        db.close();
+        reject(request.error);
+      };
+    });
+  } catch (err) {
+    console.error('IndexedDB getDashboardData error:', err);
+    return null;
   }
 }

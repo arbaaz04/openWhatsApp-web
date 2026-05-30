@@ -37,10 +37,19 @@ export function ChatPane() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const lastLoadedConvIdRef = useRef<string | null>(null);
+  const lastLoadedUserIdRef = useRef<string | null>(null);
+  const lastLoadedMetaConvIdRef = useRef<string | null>(null);
+  const lastLoadedMetaUserIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     async function fetchMessages() {
       const userId = session?.user?.id;
       if (!userId || !conversationId) return;
+
+      if (lastLoadedConvIdRef.current === conversationId && lastLoadedUserIdRef.current === userId) {
+        return;
+      }
       
       // Load from cache first for instant render
       getMessages(userId, conversationId).then(cached => {
@@ -78,6 +87,8 @@ export function ChatPane() {
             })).reverse();
             setMessages(formatted);
             putMessages(userId, conversationId, formatted);
+            lastLoadedConvIdRef.current = conversationId;
+            lastLoadedUserIdRef.current = userId;
             setTimeout(scrollToBottom, 100);
           }
         }
@@ -109,7 +120,13 @@ export function ChatPane() {
   // Try to find the customer number and whatsappId from the single conversation endpoint.
   useEffect(() => {
      async function fetchConvMeta() {
-        if (!session || !conversationId) return;
+        const userId = session?.user?.id;
+        if (!session || !conversationId || !userId) return;
+
+        if (lastLoadedMetaConvIdRef.current === conversationId && lastLoadedMetaUserIdRef.current === userId) {
+          return;
+        }
+
         try {
            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
            const res = await fetch(`${apiUrl}/api/conversations/${conversationId}`, {
@@ -122,6 +139,8 @@ export function ChatPane() {
                setWhatsappId(data.conversation.whatsappId);
                setTeamId(data.conversation.teamId);
                setLastCustomerMessageAt(data.conversation.lastCustomerMessageAt);
+               lastLoadedMetaConvIdRef.current = conversationId;
+               lastLoadedMetaUserIdRef.current = userId;
              }
            }
         } catch (e) {

@@ -24,6 +24,9 @@ export interface WsMessage {
   bodyText?: string | null;
   wamid?: string | null;
   timestamp: string;
+  customerPhone?: string;
+  senderName?: string;
+  status?: string;
 }
 
 interface WebSocketContextType {
@@ -46,21 +49,27 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [channels, setChannels] = useState<Channel[]>([]);
   const [connections, setConnections] = useState<{ [whatsappId: string]: boolean }>({});
   
+  const sessionRef = useRef(session);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
   const listenersRef = useRef<Array<(msg: WsMessage) => void>>([]);
 
-  const registerMessageListener = (listener: (msg: WsMessage) => void) => {
+  const registerMessageListener = useCallback((listener: (msg: WsMessage) => void) => {
     listenersRef.current.push(listener);
     return () => {
       listenersRef.current = listenersRef.current.filter((l) => l !== listener);
     };
-  };
+  }, []);
 
   const refreshConversations = useCallback(async () => {
-    if (!session) return;
+    const currentSession = sessionRef.current;
+    if (!currentSession) return;
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
       const res = await fetch(`${apiUrl}/api/conversations/`, {
-        headers: { 'Authorization': `Bearer ${session.access_token}` }
+        headers: { 'Authorization': `Bearer ${currentSession.access_token}` }
       });
       if (res.ok) {
         const data = await res.json();
@@ -71,14 +80,15 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } catch (err) {
       console.error('Failed to fetch conversations:', err);
     }
-  }, [session]);
+  }, []);
 
   const fetchChannels = useCallback(async () => {
-    if (!session || !teamId) return;
+    const currentSession = sessionRef.current;
+    if (!currentSession || !teamId) return;
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
       const res = await fetch(`${apiUrl}/api/teams/${teamId}/channels`, {
-        headers: { 'Authorization': `Bearer ${session.access_token}` }
+        headers: { 'Authorization': `Bearer ${currentSession.access_token}` }
       });
       if (res.ok) {
         const data = await res.json();
@@ -89,9 +99,11 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } catch (err) {
       console.error('Failed to fetch channels:', err);
     }
-  }, [session, teamId]);
+  }, [teamId]);
 
   const hasLoadedRef = useRef(false);
+  const lastLoadedUserIdRef = useRef<string | null>(null);
+  const lastLoadedTeamIdRef = useRef<string | number | undefined>(null);
 
   // Initial data fetch on session or team change
   useEffect(() => {
@@ -100,9 +112,15 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setConversations([]);
       setChannels([]);
       hasLoadedRef.current = false;
+      lastLoadedUserIdRef.current = null;
+      lastLoadedTeamIdRef.current = undefined;
       return;
     }
     
+    if (lastLoadedUserIdRef.current === userId && lastLoadedTeamIdRef.current === teamId) {
+      return;
+    }
+
     // Load from cache first for instant render
     getConversations(userId).then(cached => {
       if (cached && cached.length > 0) {
@@ -115,6 +133,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     Promise.all([refreshConversations(), fetchChannels()]).finally(() => {
       setLoadingConversations(false);
       hasLoadedRef.current = true;
+      lastLoadedUserIdRef.current = userId;
+      lastLoadedTeamIdRef.current = teamId;
     });
   }, [session?.user?.id, teamId, refreshConversations, fetchChannels]);
 
@@ -132,10 +152,6 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   ])];
   const whatsappIdsKey = uniqueWhatsappIds.join(',');
 
-  const sessionRef = useRef(session);
-  useEffect(() => {
-    sessionRef.current = session;
-  }, [session]);
 
   // Manage WebSockets globally
   useEffect(() => {

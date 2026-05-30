@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { 
   Plus, Key, Globe, Waypoints, ExternalLink, 
   Package, Activity, Mail
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../contexts/AuthContext';
+import { useWebSocket } from '../../contexts/WebSocketContext';
+import { getDashboardData, putDashboardData } from '../../lib/db';
 
 interface DashboardStats {
   numbersCount: number;
@@ -30,11 +32,31 @@ export function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentMessages, setRecentMessages] = useState<RecentMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const { conversations, registerMessageListener } = useWebSocket();
+  const lastLoadedUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!session) return;
+      const userId = session?.user?.id;
+      if (!session || !userId) return;
+
+      if (lastLoadedUserIdRef.current === userId) {
+        return;
+      }
       
+      // Load from cache first for instant render
+      getDashboardData(userId, 'stats').then((cachedStats) => {
+        if (cachedStats) {
+          setStats(cachedStats as DashboardStats);
+        }
+      });
+      getDashboardData(userId, 'recentMessages').then((cachedMessages) => {
+        if (cachedMessages && (cachedMessages as RecentMessage[]).length > 0) {
+          setRecentMessages(cachedMessages as RecentMessage[]);
+          setLoading(false);
+        }
+      });
+
       try {
         const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
         
@@ -50,12 +72,16 @@ export function Dashboard() {
         if (statsRes.ok) {
           const data = await statsRes.json();
           setStats(data.stats);
+          putDashboardData(userId, 'stats', data.stats);
         }
 
         if (messagesRes.ok) {
           const data = await messagesRes.json();
           setRecentMessages(data.messages);
+          putDashboardData(userId, 'recentMessages', data.messages);
         }
+        
+        lastLoadedUserIdRef.current = userId;
       } catch (err) {
         console.error('Failed to fetch dashboard data:', err);
       } finally {
@@ -64,7 +90,59 @@ export function Dashboard() {
     };
 
     fetchData();
-  }, [session]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.id]);
+
+  // Real-time updates for dashboard stats and recent messages
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+
+    const unsubscribe = registerMessageListener((data) => {
+      if (data.type === 'incoming' || data.type === 'outgoing') {
+        // 1. Update stats
+        setStats((prev) => {
+          if (!prev) return prev;
+          const isIncoming = data.type === 'incoming';
+          const nextStats = {
+            ...prev,
+            messagesCount: prev.messagesCount + 1,
+            inboundCount: prev.inboundCount + (isIncoming ? 1 : 0),
+            outboundCount: prev.outboundCount + (isIncoming ? 0 : 1)
+          };
+          putDashboardData(userId, 'stats', nextStats);
+          return nextStats;
+        });
+
+        // 2. Add to recent messages list
+        setRecentMessages((prev) => {
+          if (prev.find((m) => String(m.id) === String(data.messageId))) {
+            return prev;
+          }
+
+          const matchingConv = conversations.find(c => String(c.id) === String(data.conversationId));
+          const phoneVal = data.customerPhone || matchingConv?.customerNumber || 'WhatsApp';
+          const contactVal = data.senderName || (data.type === 'incoming' ? 'Customer' : 'Business');
+
+          const newMsg: RecentMessage = {
+            id: Number(data.messageId) || Date.now(),
+            phone: phoneVal,
+            contact: contactVal,
+            direction: data.type === 'incoming' ? 'incoming' : 'outgoing',
+            status: data.status || 'received',
+            content: data.bodyText || data.body || '',
+            createdAt: data.timestamp || new Date().toISOString()
+          };
+
+          const nextMessages = [newMsg, ...prev].slice(0, 10);
+          putDashboardData(userId, 'recentMessages', nextMessages);
+          return nextMessages;
+        });
+      }
+    });
+
+    return unsubscribe;
+  }, [registerMessageListener, session?.user?.id, conversations]);
 
   return (
     <div className="flex-1 bg-white overflow-y-auto no-scrollbar pb-20">
