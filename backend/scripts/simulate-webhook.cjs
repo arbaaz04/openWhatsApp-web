@@ -11,10 +11,10 @@ const payload = JSON.stringify({
     changes: [{
       value: {
         messaging_product: "whatsapp",
-        metadata: { display_phone_number: "+16315551182", phone_number_id: whatsappId },
-        contacts: [{ profile: { name: "Test User" }, wa_id: "+16315551182" }],
+        metadata: { display_phone_number: "+16315551184", phone_number_id: whatsappId },
+        contacts: [{ profile: { name: "Test User" }, wa_id: "+16315551184" }],
         messages: [{
-          from: "16315551182",
+          from: "16315551184",
           id: "wamid.HBgLMTYzMTU1NTExODEVAgARGBI" + Math.random().toString(36).substring(2, 10).toUpperCase(),
           timestamp: Math.floor(Date.now() / 1000).toString(),
           text: { body: "New hello from terminal test!" },

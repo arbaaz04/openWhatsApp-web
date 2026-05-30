@@ -135,15 +135,24 @@ export function InboxSidebar() {
     if (!session || uniqueWhatsappIds.length === 0) return;
 
     const sockets: WebSocket[] = [];
-    const apiUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8787').replace('http', 'ws');
+    const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
+    const cleanApiUrl = rawApiUrl.replace(/\/$/, '');
+    const wsUrl = cleanApiUrl.replace(/^http/, 'ws');
     const token = session?.access_token || '';
 
     uniqueWhatsappIds.forEach(whatsappId => {
-      const socket = new WebSocket(`${apiUrl}/api/ws/inbox?phoneNumberId=${whatsappId}&token=${encodeURIComponent(token)}`);
+      const socketUrl = `${wsUrl}/api/ws/inbox?phoneNumberId=${whatsappId}&token=${encodeURIComponent(token)}`;
+      console.log('[WebSocket] Connecting to Sidebar WS:', socketUrl);
+      const socket = new WebSocket(socketUrl);
       
+      socket.onopen = () => {
+        console.log(`[WebSocket] Sidebar WS connected for channel: ${whatsappId}`);
+      };
+
       socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          console.log('[WebSocket] Sidebar WS received message:', data);
           if (data.type === 'incoming' || data.type === 'outgoing') {
             setConversations(prev => {
               const next = [...prev];
@@ -168,7 +177,8 @@ export function InboxSidebar() {
               } else {
                 // This is a new conversation started while the user is inside.
                 // Fetch the new conversation detail and prepend it to the list.
-                fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8787'}/api/conversations/${data.conversationId}`, {
+                const fetchUrl = `${cleanApiUrl}/api/conversations/${data.conversationId}`;
+                fetch(fetchUrl, {
                   headers: { 'Authorization': `Bearer ${token}` }
                 })
                   .then(res => res.json())
@@ -193,14 +203,22 @@ export function InboxSidebar() {
                       });
                     }
                   })
-                  .catch(err => console.error('Failed to fetch new conversation detail:', err));
+                  .catch(err => console.error('[WebSocket] Failed to fetch new conversation detail:', err));
               }
               return next;
             });
           }
         } catch (e) {
-          console.error('Sidebar WS error:', e);
+          console.error('[WebSocket] Sidebar WS error parsing:', e);
         }
+      };
+
+      socket.onclose = (event) => {
+        console.log(`[WebSocket] Sidebar WS closed for channel ${whatsappId}:`, event.code, event.reason);
+      };
+
+      socket.onerror = (err) => {
+        console.error(`[WebSocket] Sidebar WS error for channel ${whatsappId}:`, err);
       };
 
       sockets.push(socket);

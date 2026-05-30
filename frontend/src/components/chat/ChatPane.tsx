@@ -81,6 +81,7 @@ export function ChatPane() {
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const [lastCustomerMessageAt, setLastCustomerMessageAt] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [isWsConnected, setIsWsConnected] = useState(false);
 
   // Dynamic ticking timer to update the window expiry in real-time
   useEffect(() => {
@@ -95,21 +96,21 @@ export function ChatPane() {
      async function fetchConvMeta() {
         if (!session || !conversationId) return;
         try {
-          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
-          const res = await fetch(`${apiUrl}/api/conversations/${conversationId}`, {
-            headers: { 'Authorization': `Bearer ${session.access_token}` }
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (data.success && data.conversation) {
-              setCustomerNumber(data.conversation.customerNumber);
-              setWhatsappId(data.conversation.whatsappId);
-              setTeamId(data.conversation.teamId);
-              setLastCustomerMessageAt(data.conversation.lastCustomerMessageAt);
-            }
-          }
+           const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
+           const res = await fetch(`${apiUrl}/api/conversations/${conversationId}`, {
+             headers: { 'Authorization': `Bearer ${session.access_token}` }
+           });
+           if (res.ok) {
+             const data = await res.json();
+             if (data.success && data.conversation) {
+               setCustomerNumber(data.conversation.customerNumber);
+               setWhatsappId(data.conversation.whatsappId);
+               setTeamId(data.conversation.teamId);
+               setLastCustomerMessageAt(data.conversation.lastCustomerMessageAt);
+             }
+           }
         } catch (e) {
-          console.error('Failed to fetch conversation metadata:', e);
+           console.error('Failed to fetch conversation metadata:', e);
         }
      }
      fetchConvMeta();
@@ -119,13 +120,24 @@ export function ChatPane() {
   useEffect(() => {
     if (!session || !whatsappId || !conversationId) return;
 
-    const apiUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8787').replace('http', 'ws');
+    const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
+    const cleanApiUrl = rawApiUrl.replace(/\/$/, '');
+    const wsUrl = cleanApiUrl.replace(/^http/, 'ws');
     const token = session?.access_token || '';
-    const socket = new WebSocket(`${apiUrl}/api/ws/inbox?phoneNumberId=${whatsappId}&conversationId=${conversationId}&token=${encodeURIComponent(token)}`);
+
+    const socketUrl = `${wsUrl}/api/ws/inbox?phoneNumberId=${whatsappId}&conversationId=${conversationId}&token=${encodeURIComponent(token)}`;
+    console.log('[WebSocket] Connecting to ChatPane WS:', socketUrl);
+    const socket = new WebSocket(socketUrl);
+
+    socket.onopen = () => {
+      console.log('[WebSocket] ChatPane connection opened successfully');
+      setIsWsConnected(true);
+    };
 
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        console.log('[WebSocket] Received message:', data);
         
         // Handle incoming messages from Meta or self-broadcasts
         if (data.type === 'incoming' || data.type === 'outgoing') {
@@ -154,14 +166,24 @@ export function ChatPane() {
           }
         }
       } catch (err) {
-        console.error('Failed to parse WebSocket message:', err);
+        console.error('[WebSocket] Failed to parse WebSocket message:', err);
       }
     };
 
-    socket.onclose = () => console.log('WebSocket closed');
-    socket.onerror = (err) => console.error('WebSocket error:', err);
+    socket.onclose = (event) => {
+      console.log('[WebSocket] ChatPane connection closed:', event.code, event.reason);
+      setIsWsConnected(false);
+    };
 
-    return () => socket.close();
+    socket.onerror = (err) => {
+      console.error('[WebSocket] ChatPane connection error:', err);
+      setIsWsConnected(false);
+    };
+
+    return () => {
+      console.log('[WebSocket] Cleaning up and closing ChatPane WS');
+      socket.close();
+    };
   }, [whatsappId, conversationId, session]);
 
   // Calculate session expiration
@@ -276,6 +298,15 @@ export function ChatPane() {
               <span className="text-[11px] text-gray-500 font-medium">
                 {loading ? 'Searching history...' : `Conversation active`}
               </span>
+              {!loading && (
+                <>
+                  <span className="text-gray-300">•</span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${isWsConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                  <span className="text-[10px] text-gray-400 font-medium">
+                    {isWsConnected ? 'Live' : 'Offline'}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
