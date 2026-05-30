@@ -106,7 +106,7 @@ export async function sendWhatsAppMessage(options: {
   const payload = JSON.stringify({
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
-    to: recipientNumber,
+    to: recipientNumber.replace(/\D/g, ''),
     type,
     ...messagePayload,
   });

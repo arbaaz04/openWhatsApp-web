@@ -71,7 +71,7 @@ describe('sendWhatsAppMessage', () => {
     expect(body).toMatchObject({
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to: '+14155551234',
+      to: '14155551234',
       type: 'text',
       text: { body: 'Hello, how can I help?', preview_url: false },
     });
