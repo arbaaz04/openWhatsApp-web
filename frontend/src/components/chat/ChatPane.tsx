@@ -29,6 +29,8 @@ export function ChatPane() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [customerNumber, setCustomerNumber] = useState<string>('');
+  const [channelPhoneNumber, setChannelPhoneNumber] = useState<string>('');
+  const [channelBusinessName, setChannelBusinessName] = useState<string>('');
   const { session } = useAuth();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { isWsConnected, registerMessageListener } = useWebSocket();
@@ -139,6 +141,8 @@ export function ChatPane() {
                setWhatsappId(data.conversation.whatsappId);
                setTeamId(data.conversation.teamId);
                setLastCustomerMessageAt(data.conversation.lastCustomerMessageAt);
+               setChannelPhoneNumber(data.conversation.channelPhoneNumber || '');
+               setChannelBusinessName(data.conversation.channelBusinessName || '');
                lastLoadedMetaConvIdRef.current = conversationId;
                lastLoadedMetaUserIdRef.current = userId;
              }
@@ -298,15 +302,21 @@ export function ChatPane() {
             <h2 className="text-[14px] font-bold text-gray-900 leading-none mb-1">
               {loading ? 'Loading...' : (customerNumber || 'Customer')}
             </h2>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-gray-500 font-medium">
-                {loading ? 'Searching history...' : `Conversation active`}
-              </span>
+            <div className="flex items-center gap-1.5 text-gray-500 text-[11px] font-medium leading-none">
+              <span>{loading ? 'Searching history...' : 'Conversation active'}</span>
+              {!loading && channelPhoneNumber && (
+                <>
+                  <span className="text-gray-300 font-bold select-none">·</span>
+                  <span className="text-[#128C7E] font-semibold">
+                    via {channelBusinessName ? `${channelBusinessName} (${channelPhoneNumber})` : channelPhoneNumber}
+                  </span>
+                </>
+              )}
               {!loading && (
                 <>
-                  <span className="text-gray-300">•</span>
+                  <span className="text-gray-300 font-bold select-none">·</span>
                   <span className={`w-1.5 h-1.5 rounded-full ${isWsConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-                  <span className="text-[10px] text-gray-400 font-medium">
+                  <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">
                     {isWsConnected ? 'Live' : 'Offline'}
                   </span>
                 </>

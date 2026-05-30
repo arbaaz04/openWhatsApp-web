@@ -38,6 +38,18 @@ export const webhookService = {
             bodyText = msg.text?.body;
           } else if (msg.type === 'button') {
             bodyText = msg.button?.text;
+          } else if (msg.type === 'image') {
+            bodyText = msg.image?.caption ? `📷 [Image] ${msg.image.caption}` : '📷 [Image]';
+          } else if (msg.type === 'video') {
+            bodyText = msg.video?.caption ? `🎥 [Video] ${msg.video.caption}` : '🎥 [Video]';
+          } else if (msg.type === 'voice') {
+            bodyText = '🎙️ [Voice Message]';
+          } else if (msg.type === 'audio') {
+            bodyText = '🎵 [Audio Message]';
+          } else if (msg.type === 'document') {
+            bodyText = msg.document?.filename ? `📄 [Document] ${msg.document.filename}` : '📄 [Document]';
+          } else if (msg.type) {
+            bodyText = `[${msg.type.charAt(0).toUpperCase() + msg.type.slice(1)} Message]`;
           }
 
           if (!phoneNumberId || !customerPhone || !bodyText) {

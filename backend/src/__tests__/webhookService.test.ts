@@ -94,15 +94,18 @@ describe('Webhook Service — Payload Processing', () => {
     expect(messageRepository.processIncomingMessage).not.toHaveBeenCalled();
   });
 
-  it('should skip messages with no extractable body text', async () => {
+  it('should extract text from incoming media messages (image, video, voice, audio, document)', async () => {
     const payload = basePayload();
     payload.entry[0].changes[0].value.messages = [
-      { from: 'cust456', id: 'msg2', timestamp: '1234567890', type: 'image' },
+      { from: 'cust456', id: 'msg-img', timestamp: '1234567890', type: 'image', image: { caption: 'A nice view' } },
+      { from: 'cust456', id: 'msg-voc', timestamp: '1234567890', type: 'voice' },
     ];
 
     await webhookService.processPayload(db, payload);
 
-    expect(messageRepository.processIncomingMessage).not.toHaveBeenCalled();
+    expect(messageRepository.processIncomingMessage).toHaveBeenCalledTimes(2);
+    expect(messageRepository.processIncomingMessage).toHaveBeenNthCalledWith(1, db, 'host123', 'cust456', '📷 [Image] A nice view', 'msg-img');
+    expect(messageRepository.processIncomingMessage).toHaveBeenNthCalledWith(2, db, 'host123', 'cust456', '🎙️ [Voice Message]', 'msg-voc');
   });
 
   it('should extract text from button replies', async () => {

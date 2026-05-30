@@ -79,6 +79,8 @@ async function resolveAndAuthorize(
   whatsappId: string | null;
   accessToken: string;
   lastCustomerMessageAt: Date | null;
+  channelPhoneNumber: string | null;
+  channelBusinessName: string | null;
 }> {
   const [row] = await db
     .select({
@@ -89,6 +91,8 @@ async function resolveAndAuthorize(
       whatsappId: channels.whatsappId,
       accessToken: channels.accessToken,
       lastCustomerMessageAt: conversations.lastCustomerMessageAt,
+      channelPhoneNumber: channels.phoneNumber,
+      channelBusinessName: channels.businessName,
     })
     .from(conversations)
     .innerJoin(channels, eq(channels.id, conversations.channelId))
@@ -215,6 +219,8 @@ const getConversationRoute = createRoute({
               whatsappId: z.string().nullable(),
               isWindowOpen: z.boolean(),
               lastCustomerMessageAt: z.string().nullable(),
+              channelPhoneNumber: z.string().nullable(),
+              channelBusinessName: z.string().nullable(),
             }),
           }),
         },
@@ -249,6 +255,8 @@ conversationRouter.openapi(getConversationRoute, async (c) => {
       lastCustomerMessageAt: row.lastCustomerMessageAt
         ? row.lastCustomerMessageAt.toISOString()
         : null,
+      channelPhoneNumber: row.channelPhoneNumber,
+      channelBusinessName: row.channelBusinessName,
     },
   }, 200);
 });

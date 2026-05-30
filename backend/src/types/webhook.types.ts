@@ -14,13 +14,29 @@ const MetaButtonPayloadSchema = z.object({
   payload: z.string(),
 });
 
+const MetaImageSchema = z.object({
+  caption: z.string().optional(),
+});
+
+const MetaVideoSchema = z.object({
+  caption: z.string().optional(),
+});
+
+const MetaDocumentSchema = z.object({
+  filename: z.string().optional(),
+  caption: z.string().optional(),
+});
+
 const MetaMessageSchema = z.object({
   from: z.string(),
   id: z.string(),
   timestamp: z.string(),
-  type: z.enum(['text', 'button', 'image', 'audio', 'video', 'document', 'sticker', 'location', 'contacts', 'interactive', 'order', 'system', 'unknown']),
+  type: z.enum(['text', 'button', 'image', 'voice', 'audio', 'video', 'document', 'sticker', 'location', 'contacts', 'interactive', 'order', 'system', 'unknown']),
   text: MetaTextMessageSchema.optional(),
   button: MetaButtonPayloadSchema.optional(),
+  image: MetaImageSchema.optional(),
+  video: MetaVideoSchema.optional(),
+  document: MetaDocumentSchema.optional(),
 });
 
 const MetaMetadataSchema = z.object({
