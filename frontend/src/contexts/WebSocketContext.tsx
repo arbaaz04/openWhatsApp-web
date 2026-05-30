@@ -56,6 +56,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const listenersRef = useRef<Array<(msg: WsMessage) => void>>([]);
 
+  const socketsRef = useRef<{ [whatsappId: string]: WebSocket }>({});
+  const timeoutsRef = useRef<{ [whatsappId: string]: ReturnType<typeof setTimeout> }>({});
+
   const registerMessageListener = useCallback((listener: (msg: WsMessage) => void) => {
     listenersRef.current.push(listener);
     return () => {
@@ -153,29 +156,78 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const whatsappIdsKey = uniqueWhatsappIds.join(',');
 
 
+  // Cleanup all WebSockets on user logout or unmount
+  useEffect(() => {
+    const activeSockets = socketsRef.current;
+    const activeTimeouts = timeoutsRef.current;
+    return () => {
+      Object.keys(activeSockets).forEach(id => {
+        try {
+          activeSockets[id]?.close(1000);
+        } catch {
+          // ignore
+        }
+        delete activeSockets[id];
+      });
+      Object.keys(activeTimeouts).forEach(id => {
+        clearTimeout(activeTimeouts[id]);
+        delete activeTimeouts[id];
+      });
+      setConnections({});
+    };
+  }, [session?.user?.id]);
+
   // Manage WebSockets globally
   useEffect(() => {
     const userId = session?.user?.id;
     if (!userId || !whatsappIdsKey) return;
 
     const channelsToConnect = whatsappIdsKey.split(',').filter(Boolean);
-    const sockets: WebSocket[] = [];
     const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
     const cleanApiUrl = rawApiUrl.replace(/\/$/, '');
     const wsUrl = cleanApiUrl.replace(/^http/, 'ws');
     const token = sessionRef.current?.access_token || '';
 
-    let isClosedByUser = false;
-    const reconnectTimeouts: { [key: string]: ReturnType<typeof setTimeout> } = {};
+    // 1. Close any sockets that are no longer linked/needed
+    Object.keys(socketsRef.current).forEach(whatsappId => {
+      if (!channelsToConnect.includes(whatsappId)) {
+        try {
+          socketsRef.current[whatsappId]?.close(1000);
+        } catch {
+          // ignore
+        }
+        delete socketsRef.current[whatsappId];
+        
+        if (timeoutsRef.current[whatsappId]) {
+          clearTimeout(timeoutsRef.current[whatsappId]);
+          delete timeoutsRef.current[whatsappId];
+        }
 
+        setConnections(prev => {
+          const next = { ...prev };
+          delete next[whatsappId];
+          return next;
+        });
+      }
+    });
+
+    // 2. Establish connections to new channels
     channelsToConnect.forEach(whatsappId => {
+      if (socketsRef.current[whatsappId]) {
+        return; // Already connecting/connected
+      }
+
       const socketUrl = `${wsUrl}/api/ws/inbox?phoneNumberId=${whatsappId}&token=${encodeURIComponent(token)}`;
-      let socket: WebSocket | null = null;
       let retryCount = 0;
 
       function connect() {
-        if (isClosedByUser) return;
-        socket = new WebSocket(socketUrl);
+        if (timeoutsRef.current[whatsappId]) {
+          clearTimeout(timeoutsRef.current[whatsappId]);
+          delete timeoutsRef.current[whatsappId];
+        }
+
+        const socket = new WebSocket(socketUrl);
+        socketsRef.current[whatsappId] = socket;
         
         socket.onopen = () => {
           retryCount = 0;
@@ -186,7 +238,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           try {
             const data = JSON.parse(event.data);
             
-            // 1. Notify any custom listeners (like ChatPane)
+            // Notify any custom listeners (like ChatPane)
             listenersRef.current.forEach(listener => {
               try {
                 listener(data);
@@ -195,7 +247,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               }
             });
 
-            // 2. Update conversation list locally
+            // Update conversation list locally
             if (data.type === 'incoming' || data.type === 'outgoing') {
               setConversations(prev => {
                 const next = [...prev];
@@ -254,12 +306,12 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           }
         };
 
-        socket.onclose = () => {
+        socket.onclose = (event) => {
           setConnections(prev => ({ ...prev, [whatsappId]: false }));
-          if (!isClosedByUser) {
+          if (socketsRef.current[whatsappId] === socket && event.code !== 1000) {
             const delay = Math.min(1000 * Math.pow(2, retryCount), 15000);
             retryCount++;
-            reconnectTimeouts[whatsappId] = setTimeout(connect, delay);
+            timeoutsRef.current[whatsappId] = setTimeout(connect, delay);
           }
         };
 
@@ -267,21 +319,10 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           console.error(`[WebSocket] Global WS error for channel ${whatsappId}:`, err);
           setConnections(prev => ({ ...prev, [whatsappId]: false }));
         };
-
-        if (socket) {
-          sockets.push(socket);
-        }
       }
 
       connect();
     });
-
-    return () => {
-      isClosedByUser = true;
-      sockets.forEach(s => s.close());
-      Object.values(reconnectTimeouts).forEach(t => clearTimeout(t));
-      setConnections({});
-    };
   }, [session?.user?.id, whatsappIdsKey]);
 
   // Overall WS status indicator
