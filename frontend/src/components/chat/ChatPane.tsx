@@ -10,6 +10,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import type { Message as BubbleMessage } from './MessageBubble';
 
 import { useWebSocket } from '../../contexts/WebSocketContext';
+import { getMessages, putMessages, putSingleMessage } from '../../lib/db';
 
 interface ChatMessage {
   id: string;
@@ -38,8 +39,18 @@ export function ChatPane() {
 
   useEffect(() => {
     async function fetchMessages() {
-      if (!session || !conversationId) return;
-      setLoading(true);
+      const userId = session?.user?.id;
+      if (!userId || !conversationId) return;
+      
+      // Load from cache first for instant render
+      getMessages(userId, conversationId).then(cached => {
+        if (cached && cached.length > 0) {
+          setMessages(cached);
+          setLoading(false);
+          setTimeout(scrollToBottom, 50);
+        }
+      });
+
       try {
         const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
         
@@ -66,6 +77,7 @@ export function ChatPane() {
               senderName: m.direction === 'incoming' ? 'Customer' : undefined
             })).reverse();
             setMessages(formatted);
+            putMessages(userId, conversationId, formatted);
             setTimeout(scrollToBottom, 100);
           }
         }
@@ -77,7 +89,8 @@ export function ChatPane() {
     }
 
     fetchMessages();
-  }, [conversationId, session]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, session?.user?.id]);
 
   const [whatsappId, setWhatsappId] = useState<string>('');
   const [teamId, setTeamId] = useState<string | number>('');
@@ -116,11 +129,13 @@ export function ChatPane() {
         }
      }
      fetchConvMeta();
-  }, [conversationId, session]);
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, session?.user?.id]);
 
   // Subscribe to real-time events from the global WebSocket provider
   useEffect(() => {
-    if (!whatsappId || !conversationId) return;
+    const userId = session?.user?.id;
+    if (!whatsappId || !conversationId || !userId) return;
 
     const unsubscribe = registerMessageListener((data) => {
       if (data.type === 'incoming' || data.type === 'outgoing') {
@@ -134,9 +149,10 @@ export function ChatPane() {
           };
 
           setMessages(prev => {
-            // Deduplicate by message ID
             if (prev.find(m => m.id === newMessage.id)) return prev;
-            return [...prev, newMessage];
+            const next = [...prev, newMessage];
+            putSingleMessage(userId, conversationId, newMessage);
+            return next;
           });
 
           if (data.type === 'incoming') {
@@ -149,7 +165,7 @@ export function ChatPane() {
     });
 
     return unsubscribe;
-  }, [whatsappId, conversationId, registerMessageListener]);
+  }, [whatsappId, conversationId, registerMessageListener, session?.user?.id]);
 
   // Calculate session expiration
   const isExpired = !lastCustomerMessageAt || 
@@ -164,7 +180,8 @@ export function ChatPane() {
   };
 
   const handleSendMessage = async (body: string) => {
-    if (!session || !conversationId) return;
+    const userId = session?.user?.id;
+    if (!session || !userId || !conversationId) return;
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
       const res = await fetch(`${apiUrl}/api/conversations/${conversationId}/messages`, {
@@ -190,6 +207,7 @@ export function ChatPane() {
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             };
             setMessages(prev => [...prev, newMessage]);
+            putSingleMessage(userId, conversationId, newMessage);
             setReplyingTo(null);
             setTimeout(scrollToBottom, 100);
         }
@@ -200,7 +218,8 @@ export function ChatPane() {
   };
 
   const handleSendTemplate = async (payload: Record<string, unknown>) => {
-    if (!session || !conversationId) return;
+    const userId = session?.user?.id;
+    if (!session || !userId || !conversationId) return;
     try {
       // Find the template body text to show it optimistically
       const template = payload.template as { name: string };
@@ -231,6 +250,7 @@ export function ChatPane() {
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             };
             setMessages(prev => [...prev, newMessage]);
+            putSingleMessage(userId, conversationId, newMessage);
             setTimeout(scrollToBottom, 100);
         }
       }

@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Session, User } from '@supabase/supabase-js';
+import { deleteUserDb } from '../lib/db';
 
 interface Profile {
   id: string;
@@ -33,14 +34,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<Profile | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
+  const lastSyncedUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     // 1. Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session && session.user) {
-        syncProfile(session.access_token, session.user);
+        if (lastSyncedUserIdRef.current !== session.user.id) {
+          lastSyncedUserIdRef.current = session.user.id;
+          syncProfile(session.access_token, session.user);
+        }
       } else {
+        lastSyncedUserIdRef.current = null;
         setProfile(null);
         setTeams([]);
         setLoading(false);
@@ -51,7 +57,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session && session.user) {
-        syncProfile(session.access_token, session.user);
+        if (lastSyncedUserIdRef.current !== session.user.id) {
+          lastSyncedUserIdRef.current = session.user.id;
+          syncProfile(session.access_token, session.user);
+        }
       } else {
         setLoading(false);
       }
@@ -118,6 +127,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signOut = async () => {
+    const currentUserId = session?.user?.id;
+    if (currentUserId) {
+      try {
+        await deleteUserDb(currentUserId);
+      } catch (err) {
+        console.error('Failed to wipe IndexedDB on signOut:', err);
+      }
+    }
     await supabase.auth.signOut();
   };
 

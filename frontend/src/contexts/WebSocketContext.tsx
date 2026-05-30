@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { useAuth } from './AuthContext';
+import { getConversations, putConversations } from '../lib/db';
 
 export interface Conversation {
   id: number;
@@ -90,19 +91,40 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [session, teamId]);
 
+  const hasLoadedRef = useRef(false);
+
   // Initial data fetch on session or team change
   useEffect(() => {
-    if (!session) {
+    const userId = session?.user?.id;
+    if (!userId) {
       setConversations([]);
       setChannels([]);
+      hasLoadedRef.current = false;
       return;
     }
     
+    // Load from cache first for instant render
+    getConversations(userId).then(cached => {
+      if (cached && cached.length > 0) {
+        setConversations(cached);
+        hasLoadedRef.current = true;
+      }
+    });
+
     setLoadingConversations(true);
     Promise.all([refreshConversations(), fetchChannels()]).finally(() => {
       setLoadingConversations(false);
+      hasLoadedRef.current = true;
     });
-  }, [session, teamId, refreshConversations, fetchChannels]);
+  }, [session?.user?.id, teamId, refreshConversations, fetchChannels]);
+
+  // Sync conversations to IndexedDB on any update
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (userId && hasLoadedRef.current) {
+      putConversations(userId, conversations);
+    }
+  }, [conversations, session?.user?.id]);
 
   const uniqueWhatsappIds = [...new Set([
     ...channels.map(c => c.whatsappId).filter(Boolean),
@@ -110,16 +132,22 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   ])];
   const whatsappIdsKey = uniqueWhatsappIds.join(',');
 
+  const sessionRef = useRef(session);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
   // Manage WebSockets globally
   useEffect(() => {
-    if (!session || !whatsappIdsKey) return;
+    const userId = session?.user?.id;
+    if (!userId || !whatsappIdsKey) return;
 
     const channelsToConnect = whatsappIdsKey.split(',').filter(Boolean);
     const sockets: WebSocket[] = [];
     const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
     const cleanApiUrl = rawApiUrl.replace(/\/$/, '');
     const wsUrl = cleanApiUrl.replace(/^http/, 'ws');
-    const token = session?.access_token || '';
+    const token = sessionRef.current?.access_token || '';
 
     let isClosedByUser = false;
     const reconnectTimeouts: { [key: string]: ReturnType<typeof setTimeout> } = {};
@@ -238,7 +266,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       Object.values(reconnectTimeouts).forEach(t => clearTimeout(t));
       setConnections({});
     };
-  }, [session, whatsappIdsKey]);
+  }, [session?.user?.id, whatsappIdsKey]);
 
   // Overall WS status indicator
   const isWsConnected = Object.values(connections).some(Boolean);
