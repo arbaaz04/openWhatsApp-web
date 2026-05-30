@@ -329,6 +329,7 @@ function metaCodeToHttpStatus(code: number): number {
 
     // Recipient errors (number invalid / unreachable)
     case 131021: // Recipient not valid
+    case 131030: // Recipient phone number not in allowed list
     case 131051: // Unsupported message type for this recipient
       return 400;
 
@@ -338,7 +339,12 @@ function metaCodeToHttpStatus(code: number): number {
       return 502;
 
     default:
-      return code >= 500 ? 502 : 422;
+      // Meta server/general error codes are usually 5xx.
+      // Unhandled 6-digit codes (13xxxx) are business/client rule violations.
+      if (code >= 500 && code <= 599) {
+        return 502;
+      }
+      return 422;
   }
 }
 
