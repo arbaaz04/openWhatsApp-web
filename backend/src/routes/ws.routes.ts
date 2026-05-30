@@ -44,7 +44,7 @@ wsRouter.get('/inbox', async (c) => {
   const log = createLogger({ requestId: c.get('requestId') });
   const userId = c.get('userId');
 
-  if (c.req.header('Upgrade') !== 'websocket') {
+  if (c.req.header('Upgrade')?.toLowerCase() !== 'websocket') {
     return c.text('Expected Upgrade: websocket', 426);
   }
 

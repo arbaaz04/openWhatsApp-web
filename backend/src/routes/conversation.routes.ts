@@ -503,7 +503,14 @@ conversationRouter.openapi(sendMessageRoute, async (c) => {
           status: 'sent',
           timestamp: new Date().toISOString(),
         }),
-      })).catch((err: unknown) => {
+      })).then(async (res) => {
+        if (!res.ok) {
+          log.error('Durable Object WS broadcast failed for outbound message', {
+            status: res.status,
+            body: await res.text()
+          });
+        }
+      }).catch((err: unknown) => {
         log.error('WS broadcast failed for outbound message', {
           conversationId,
           wamid,

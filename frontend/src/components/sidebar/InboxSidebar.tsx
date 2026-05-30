@@ -140,92 +140,115 @@ export function InboxSidebar() {
     const wsUrl = cleanApiUrl.replace(/^http/, 'ws');
     const token = session?.access_token || '';
 
+    let isClosedByUser = false;
+    const reconnectTimeouts: { [key: string]: any } = {};
+
     uniqueWhatsappIds.forEach(whatsappId => {
       const socketUrl = `${wsUrl}/api/ws/inbox?phoneNumberId=${whatsappId}&token=${encodeURIComponent(token)}`;
-      console.log('[WebSocket] Connecting to Sidebar WS:', socketUrl);
-      const socket = new WebSocket(socketUrl);
-      
-      socket.onopen = () => {
-        console.log(`[WebSocket] Sidebar WS connected for channel: ${whatsappId}`);
-      };
+      let socket: WebSocket | null = null;
+      let retryCount = 0;
 
-      socket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log('[WebSocket] Sidebar WS received message:', data);
-          if (data.type === 'incoming' || data.type === 'outgoing') {
-            setConversations(prev => {
-              const next = [...prev];
-              const idx = next.findIndex(c => String(c.id) === String(data.conversationId));
-              
-              if (idx !== -1) {
-                // Update existing conversation
-                const isIncoming = data.type === 'incoming';
-                const nextLastCustomerMessageAt = isIncoming ? data.timestamp : next[idx].lastCustomerMessageAt;
-                const isWindowOpen = nextLastCustomerMessageAt
-                  ? (Date.now() - new Date(nextLastCustomerMessageAt).getTime()) < 24 * 60 * 60 * 1000
-                  : false;
+      function connect() {
+        if (isClosedByUser) return;
+        console.log(`[WebSocket] Connecting to Sidebar WS for ${whatsappId} (attempt ${retryCount + 1}):`, socketUrl);
+        socket = new WebSocket(socketUrl);
+        
+        socket.onopen = () => {
+          console.log(`[WebSocket] Sidebar WS connected for channel: ${whatsappId}`);
+          retryCount = 0;
+        };
 
-                next[idx] = {
-                  ...next[idx],
-                  lastCustomerMessageAt: nextLastCustomerMessageAt,
-                  isWindowOpen
-                };
-                // Move to top
-                const [item] = next.splice(idx, 1);
-                next.unshift(item);
-              } else {
-                // This is a new conversation started while the user is inside.
-                // Fetch the new conversation detail and prepend it to the list.
-                const fetchUrl = `${cleanApiUrl}/api/conversations/${data.conversationId}`;
-                fetch(fetchUrl, {
-                  headers: { 'Authorization': `Bearer ${token}` }
-                })
-                  .then(res => res.json())
-                  .then(resData => {
-                    if (resData.success && resData.conversation) {
-                      setConversations(current => {
-                        // Avoid duplicates
-                        if (current.find(c => String(c.id) === String(resData.conversation.id))) {
-                          return current;
-                        }
-                        return [
-                          {
-                            id: resData.conversation.id,
-                            customerNumber: resData.conversation.customerNumber,
-                            whatsappId: resData.conversation.whatsappId || '',
-                            isWindowOpen: resData.conversation.isWindowOpen,
-                            lastCustomerMessageAt: resData.conversation.lastCustomerMessageAt,
-                            createdAt: new Date().toISOString()
-                          },
-                          ...current
-                        ];
-                      });
-                    }
+        socket.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log('[WebSocket] Sidebar WS received message:', data);
+            if (data.type === 'incoming' || data.type === 'outgoing') {
+              setConversations(prev => {
+                const next = [...prev];
+                const idx = next.findIndex(c => String(c.id) === String(data.conversationId));
+                
+                if (idx !== -1) {
+                  // Update existing conversation
+                  const isIncoming = data.type === 'incoming';
+                  const nextLastCustomerMessageAt = isIncoming ? data.timestamp : next[idx].lastCustomerMessageAt;
+                  const isWindowOpen = nextLastCustomerMessageAt
+                    ? (Date.now() - new Date(nextLastCustomerMessageAt).getTime()) < 24 * 60 * 60 * 1000
+                    : false;
+
+                  next[idx] = {
+                    ...next[idx],
+                    lastCustomerMessageAt: nextLastCustomerMessageAt,
+                    isWindowOpen
+                  };
+                  // Move to top
+                  const [item] = next.splice(idx, 1);
+                  next.unshift(item);
+                } else {
+                  // This is a new conversation started while the user is inside.
+                  // Fetch the new conversation detail and prepend it to the list.
+                  const fetchUrl = `${cleanApiUrl}/api/conversations/${data.conversationId}`;
+                  fetch(fetchUrl, {
+                    headers: { 'Authorization': `Bearer ${token}` }
                   })
-                  .catch(err => console.error('[WebSocket] Failed to fetch new conversation detail:', err));
-              }
-              return next;
-            });
+                    .then(res => res.json())
+                    .then(resData => {
+                      if (resData.success && resData.conversation) {
+                        setConversations(current => {
+                          // Avoid duplicates
+                          if (current.find(c => String(c.id) === String(resData.conversation.id))) {
+                            return current;
+                          }
+                          return [
+                            {
+                              id: resData.conversation.id,
+                              customerNumber: resData.conversation.customerNumber,
+                              whatsappId: resData.conversation.whatsappId || '',
+                              isWindowOpen: resData.conversation.isWindowOpen,
+                              lastCustomerMessageAt: resData.conversation.lastCustomerMessageAt,
+                              createdAt: new Date().toISOString()
+                            },
+                            ...current
+                          ];
+                        });
+                      }
+                    })
+                    .catch(err => console.error('[WebSocket] Failed to fetch new conversation detail:', err));
+                }
+                return next;
+              });
+            }
+          } catch (e) {
+            console.error('[WebSocket] Sidebar WS error parsing:', e);
           }
-        } catch (e) {
-          console.error('[WebSocket] Sidebar WS error parsing:', e);
+        };
+
+        socket.onclose = (event) => {
+          console.log(`[WebSocket] Sidebar WS closed for channel ${whatsappId}:`, event.code, event.reason);
+          if (!isClosedByUser) {
+            const delay = Math.min(1000 * Math.pow(2, retryCount), 15000);
+            console.log(`[WebSocket] Sidebar WS reconnecting for ${whatsappId} in ${delay}ms...`);
+            retryCount++;
+            reconnectTimeouts[whatsappId] = setTimeout(connect, delay);
+          }
+        };
+
+        socket.onerror = (err) => {
+          console.error(`[WebSocket] Sidebar WS error for channel ${whatsappId}:`, err);
+        };
+
+        if (socket) {
+          sockets.push(socket);
         }
-      };
+      }
 
-      socket.onclose = (event) => {
-        console.log(`[WebSocket] Sidebar WS closed for channel ${whatsappId}:`, event.code, event.reason);
-      };
-
-      socket.onerror = (err) => {
-        console.error(`[WebSocket] Sidebar WS error for channel ${whatsappId}:`, err);
-      };
-
-      sockets.push(socket);
+      connect();
     });
 
     return () => {
+      console.log('[WebSocket] Cleaning up and closing all Sidebar WS');
+      isClosedByUser = true;
       sockets.forEach(s => s.close());
+      Object.values(reconnectTimeouts).forEach(t => clearTimeout(t));
     };
   }, [session, whatsappIdsKey]); 
 

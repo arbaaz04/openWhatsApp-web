@@ -126,63 +126,83 @@ export function ChatPane() {
     const token = session?.access_token || '';
 
     const socketUrl = `${wsUrl}/api/ws/inbox?phoneNumberId=${whatsappId}&conversationId=${conversationId}&token=${encodeURIComponent(token)}`;
-    console.log('[WebSocket] Connecting to ChatPane WS:', socketUrl);
-    const socket = new WebSocket(socketUrl);
 
-    socket.onopen = () => {
-      console.log('[WebSocket] ChatPane connection opened successfully');
-      setIsWsConnected(true);
-    };
+    let socket: WebSocket | null = null;
+    let reconnectTimeout: any = null;
+    let retryCount = 0;
+    let isClosedByUser = false;
 
-    socket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        console.log('[WebSocket] Received message:', data);
-        
-        // Handle incoming messages from Meta or self-broadcasts
-        if (data.type === 'incoming' || data.type === 'outgoing') {
-          // Verify it matches the current conversation
-          if (String(data.conversationId) === String(conversationId)) {
-            const newMessage: ChatMessage = {
-              id: String(data.messageId),
-              body: data.bodyText || data.body || (data.type === 'outgoing' && data.wamid ? 'Template Message' : ''),
-              direction: data.type === 'incoming' ? 'incoming' : 'outgoing',
-              time: new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              senderName: data.type === 'incoming' ? 'Customer' : undefined
-            };
+    function connect() {
+      if (isClosedByUser) return;
+      console.log(`[WebSocket] Connecting to ChatPane WS (attempt ${retryCount + 1}):`, socketUrl);
+      socket = new WebSocket(socketUrl);
 
-            setMessages(prev => {
-              // Deduplicate by message ID
-              if (prev.find(m => m.id === newMessage.id)) return prev;
-              return [...prev, newMessage];
-            });
+      socket.onopen = () => {
+        console.log('[WebSocket] ChatPane connection opened successfully');
+        setIsWsConnected(true);
+        retryCount = 0; // Reset retry count on successful connection
+      };
 
-            // Update session window in real-time when a customer message is received
-            if (data.type === 'incoming') {
-              setLastCustomerMessageAt(data.timestamp);
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log('[WebSocket] Received message:', data);
+          
+          // Handle incoming messages from Meta or self-broadcasts
+          if (data.type === 'incoming' || data.type === 'outgoing') {
+            // Verify it matches the current conversation
+            if (String(data.conversationId) === String(conversationId)) {
+              const newMessage: ChatMessage = {
+                id: String(data.messageId),
+                body: data.bodyText || data.body || (data.type === 'outgoing' && data.wamid ? 'Template Message' : ''),
+                direction: data.type === 'incoming' ? 'incoming' : 'outgoing',
+                time: new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                senderName: data.type === 'incoming' ? 'Customer' : undefined
+              };
+
+              setMessages(prev => {
+                // Deduplicate by message ID
+                if (prev.find(m => m.id === newMessage.id)) return prev;
+                return [...prev, newMessage];
+              });
+
+              // Update session window in real-time when a customer message is received
+              if (data.type === 'incoming') {
+                setLastCustomerMessageAt(data.timestamp);
+              }
+
+              setTimeout(scrollToBottom, 100);
             }
-
-            setTimeout(scrollToBottom, 100);
           }
+        } catch (err) {
+          console.error('[WebSocket] Failed to parse WebSocket message:', err);
         }
-      } catch (err) {
-        console.error('[WebSocket] Failed to parse WebSocket message:', err);
-      }
-    };
+      };
 
-    socket.onclose = (event) => {
-      console.log('[WebSocket] ChatPane connection closed:', event.code, event.reason);
-      setIsWsConnected(false);
-    };
+      socket.onclose = (event) => {
+        console.log('[WebSocket] ChatPane connection closed:', event.code, event.reason);
+        setIsWsConnected(false);
+        if (!isClosedByUser) {
+          const delay = Math.min(1000 * Math.pow(2, retryCount), 15000);
+          console.log(`[WebSocket] Reconnecting in ${delay}ms...`);
+          retryCount++;
+          reconnectTimeout = setTimeout(connect, delay);
+        }
+      };
 
-    socket.onerror = (err) => {
-      console.error('[WebSocket] ChatPane connection error:', err);
-      setIsWsConnected(false);
-    };
+      socket.onerror = (err) => {
+        console.error('[WebSocket] ChatPane connection error:', err);
+        setIsWsConnected(false);
+      };
+    }
+
+    connect();
 
     return () => {
       console.log('[WebSocket] Cleaning up and closing ChatPane WS');
-      socket.close();
+      isClosedByUser = true;
+      if (socket) socket.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
   }, [whatsappId, conversationId, session]);
 

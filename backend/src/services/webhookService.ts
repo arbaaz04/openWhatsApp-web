@@ -64,23 +64,37 @@ export const webhookService = {
             if (env?.INBOX_SYNC) {
               const id = env.INBOX_SYNC.idFromName(phoneNumberId);
               const stub = env.INBOX_SYNC.get(id);
-              await stub.fetch(
-                new Request('http://internal/broadcast', {
-                  method: 'POST',
-                  headers: {
-                    'x-internal-auth': env.META_APP_SECRET,
-                  },
-                  body: JSON.stringify({
-                    type: 'incoming',
-                    messageId,
-                    conversationId,
-                    customerPhone,
-                    bodyText,
-                    timestamp: new Date().toISOString(),
-                    phoneNumberId,
-                  }),
-                })
-              );
+              try {
+                const broadcastRes = await stub.fetch(
+                  new Request('http://internal/broadcast', {
+                    method: 'POST',
+                    headers: {
+                      'x-internal-auth': env.META_APP_SECRET,
+                    },
+                    body: JSON.stringify({
+                      type: 'incoming',
+                      messageId,
+                      conversationId,
+                      customerPhone,
+                      bodyText,
+                      timestamp: new Date().toISOString(),
+                      phoneNumberId,
+                    }),
+                  })
+                );
+                if (!broadcastRes.ok) {
+                  logger.error('Durable Object WS broadcast failed', {
+                    status: broadcastRes.status,
+                    body: await broadcastRes.text()
+                  });
+                } else {
+                  logger.info('Durable Object WS broadcast succeeded');
+                }
+              } catch (err) {
+                logger.error('Durable Object fetch crashed during broadcast', {
+                  error: err instanceof Error ? err.message : String(err)
+                });
+              }
             }
 
             // ── Dispatch user webhooks (fire-and-forget) ────────────────────

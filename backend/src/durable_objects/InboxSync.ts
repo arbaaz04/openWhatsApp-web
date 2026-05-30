@@ -76,7 +76,17 @@ export class InboxSync {
     // Internal RPC — webhookService broadcasts new messages here.
     // -----------------------------------------------------------------------
     if (request.method === 'POST' && url.pathname.endsWith('/broadcast')) {
-      if (request.headers.get('x-internal-auth') !== this.env.META_APP_SECRET) {
+      const authHeader = request.headers.get('x-internal-auth') ?? '';
+      const secret = this.env.META_APP_SECRET ?? '';
+      log.info('Durable Object broadcast request received', {
+        hasAuthHeader: !!authHeader,
+        hasSecret: !!secret,
+        match: authHeader === secret,
+        authHeaderLength: authHeader.length,
+        secretLength: secret.length
+      });
+      if (authHeader !== secret) {
+        log.error('Unauthorized Durable Object broadcast attempt');
         return new Response('Unauthorized', { status: 401 });
       }
 
@@ -89,7 +99,7 @@ export class InboxSync {
     // -----------------------------------------------------------------------
     // WebSocket upgrade
     // -----------------------------------------------------------------------
-    if (request.headers.get('Upgrade') !== 'websocket') {
+    if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('Expected Upgrade: websocket', { status: 426 });
     }
 
