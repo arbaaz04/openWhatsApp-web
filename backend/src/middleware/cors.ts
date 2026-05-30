@@ -90,7 +90,7 @@ export async function cors(
   try {
     await next();
   } finally {
-    if (c.res) {
+    if (c.res && c.res.status !== 101) {
       addCorsHeaders(c.res);
     }
   }
