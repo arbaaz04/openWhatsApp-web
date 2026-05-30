@@ -23,6 +23,40 @@ interface MetaTokenResponse {
  * @returns The long-lived access token string
  * @throws {ApiError} 502 if Meta returns a non-200 or a malformed response
  */
+async function fetchWithTimeout(
+  url: string,
+  init?: RequestInit,
+  timeoutMs: number = 8000
+): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    const isAbort = (err instanceof Error && err.name === 'AbortError') || 
+                    (typeof DOMException !== 'undefined' && err instanceof DOMException && err.name === 'AbortError');
+    if (isAbort) {
+      throw new ApiError(504, `Meta Graph API request timed out (${timeoutMs}ms)`, 'META_TIMEOUT');
+    }
+    throw err;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+/**
+ * Calls the Meta Graph API to exchange a short-lived embedded signup code
+ * for a long-lived System User Access Token.
+ *
+ * @param clientId     - Your Meta App ID
+ * @param clientSecret - Your Meta App Secret
+ * @param code         - The temporary code from the embedded signup flow
+ * @returns The long-lived access token string
+ * @throws {ApiError} 502 if Meta returns a non-200 or a malformed response
+ */
 async function fetchMetaAccessToken(
   clientId: string,
   clientSecret: string,
@@ -33,7 +67,7 @@ async function fetchMetaAccessToken(
   url.searchParams.set('client_secret', clientSecret);
   url.searchParams.set('code', code);
 
-  const response = await fetch(url.toString());
+  const response = await fetchWithTimeout(url.toString(), {}, 10000);
 
   if (!response.ok) {
     const errorBody = await response.text();
@@ -66,7 +100,7 @@ async function fetchMetaAccessToken(
  */
 async function fetchWabaId(accessToken: string): Promise<string> {
   const url = `https://graph.facebook.com/v25.0/me/whatsapp_business_accounts?access_token=${accessToken}`;
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url, {}, 8000);
   if (!res.ok) throw new ApiError(502, 'Failed to fetch WABA accounts from Meta', 'META_WABA_FETCH_FAILED');
   
   const data = await res.json() as { data: Array<{ id: string }> };
@@ -81,7 +115,7 @@ async function fetchWabaId(accessToken: string): Promise<string> {
  */
 async function fetchPhoneNumberInfo(wabaId: string, accessToken: string): Promise<{ id: string; display_phone_number: string }> {
   const url = `https://graph.facebook.com/v25.0/${wabaId}/phone_numbers?access_token=${accessToken}`;
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url, {}, 8000);
   if (!res.ok) throw new ApiError(502, 'Failed to fetch phone numbers from Meta', 'META_PHONE_FETCH_FAILED');
 
   const data = await res.json() as { data: Array<{ id: string, display_phone_number: string, status: string }> };
@@ -98,7 +132,7 @@ async function fetchPhoneNumberInfo(wabaId: string, accessToken: string): Promis
  */
 async function fetchWabaName(wabaId: string, accessToken: string): Promise<string> {
   const url = `https://graph.facebook.com/v25.0/${wabaId}?fields=name&access_token=${accessToken}`;
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url, {}, 8000);
   if (!res.ok) {
     logger.warn('Failed to fetch WABA name from Meta', { wabaId, status: res.status });
     return '';
@@ -112,7 +146,7 @@ async function fetchWabaName(wabaId: string, accessToken: string): Promise<strin
  */
 async function fetchSinglePhoneInfo(phoneNumberId: string, accessToken: string): Promise<string> {
   const url = `https://graph.facebook.com/v25.0/${phoneNumberId}?fields=display_phone_number&access_token=${accessToken}`;
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url, {}, 8000);
   if (!res.ok) throw new ApiError(502, 'Failed to fetch display phone number from Meta', 'META_PHONE_FETCH_FAILED');
   
   const data = await res.json() as { display_phone_number?: string };
@@ -125,10 +159,10 @@ async function fetchSinglePhoneInfo(phoneNumberId: string, accessToken: string):
  */
 async function subscribeAppToWebhooks(wabaId: string, accessToken: string): Promise<void> {
   const url = `https://graph.facebook.com/v25.0/${wabaId}/subscribed_apps`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  }, 8000);
   
   if (!res.ok) {
     const errorBody = await res.text();
@@ -145,7 +179,7 @@ async function subscribeAppToWebhooks(wabaId: string, accessToken: string): Prom
  */
 async function registerPhoneNumber(phoneNumberId: string, accessToken: string): Promise<void> {
   const url = `https://graph.facebook.com/v25.0/${phoneNumberId}/register`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 
       'Authorization': `Bearer ${accessToken}`,
@@ -155,7 +189,7 @@ async function registerPhoneNumber(phoneNumberId: string, accessToken: string): 
       messaging_product: 'whatsapp',
       pin: '123456' // Fallback PIN if user skipped creating one.
     }),
-  });
+  }, 8000);
   
   if (!res.ok) {
     const errorBody = await res.text();
@@ -222,28 +256,54 @@ export const authService = {
     let finalWabaId: string;
     let finalPhoneNumberId: string;
     let phoneNumber: string;
+    let businessName: string;
 
     if (!wabaId || !phoneNumberId) {
       // Auto-discover if not provided
       finalWabaId = await fetchWabaId(plainAccessToken);
       const phoneInfo = await fetchPhoneNumberInfo(finalWabaId, plainAccessToken);
       finalPhoneNumberId = phoneInfo.id;
-      phoneNumber = phoneInfo.display_phone_number;
+      
+      const [displayPhone, bName] = await Promise.all([
+        Promise.resolve(phoneInfo.display_phone_number),
+        fetchWabaName(finalWabaId, plainAccessToken).catch(err => {
+          logger.warn('Failed to fetch WABA name from Meta during auto-discovery', { error: err instanceof Error ? err.message : String(err) });
+          return '';
+        })
+      ]);
+      phoneNumber = displayPhone;
+      businessName = bName;
     } else {
       finalWabaId = wabaId;
       finalPhoneNumberId = phoneNumberId;
-      // Always fetch display number when embedded signup provides the IDs
-      phoneNumber = await fetchSinglePhoneInfo(finalPhoneNumberId, plainAccessToken);
+      
+      const [displayPhone, bName] = await Promise.all([
+        fetchSinglePhoneInfo(finalPhoneNumberId, plainAccessToken),
+        fetchWabaName(finalWabaId, plainAccessToken).catch(err => {
+          logger.warn('Failed to fetch WABA name from Meta', { error: err instanceof Error ? err.message : String(err) });
+          return '';
+        })
+      ]);
+      phoneNumber = displayPhone;
+      businessName = bName;
     }
-    
-    // Fetch business name (optional but highly recommended for UI alignment)
-    const businessName = await fetchWabaName(finalWabaId, plainAccessToken);
     
     logger.info('Using business IDs', { wabaId: finalWabaId, phoneNumberId: finalPhoneNumberId, phoneNumber, businessName });
 
-    // Perform Embedded Signup mandatory post-actions
-    await subscribeAppToWebhooks(finalWabaId, plainAccessToken);
-    await registerPhoneNumber(finalPhoneNumberId, plainAccessToken);
+    // Perform Embedded Signup mandatory post-actions in parallel.
+    // If they fail or timeout, log it as warning but do not block channel database onboarding.
+    try {
+      await Promise.all([
+        subscribeAppToWebhooks(finalWabaId, plainAccessToken).catch(err => 
+          logger.warn('Failed to subscribe app to WABA webhooks', { error: err instanceof Error ? err.message : String(err) })
+        ),
+        registerPhoneNumber(finalPhoneNumberId, plainAccessToken).catch(err => 
+          logger.warn('Failed to register phone number', { error: err instanceof Error ? err.message : String(err) })
+        )
+      ]);
+    } catch (e) {
+      logger.warn('Post-signup actions encountered error', { error: e instanceof Error ? e.message : String(e) });
+    }
 
     // Encrypt before writing to the database — never store plaintext tokens
     const encryptedToken = await encrypt(plainAccessToken, encryptionKey);
