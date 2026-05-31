@@ -495,7 +495,7 @@ export function ChatPane() {
 
       // 2. Prepare outbound Meta payload
       const metaType = type === 'voice' ? 'voice' : type;
-      const payload: Record<string, any> = {};
+      const payload: Record<string, unknown> = {};
       
       if (metaType === 'document') {
         payload[metaType] = {
@@ -507,7 +507,8 @@ export function ChatPane() {
           id: mediaId
         };
         if (caption && (metaType === 'image' || metaType === 'video')) {
-          payload[metaType].caption = caption;
+          const mediaObj = payload[metaType] as Record<string, unknown>;
+          mediaObj.caption = caption;
         }
       }
 
@@ -550,9 +551,10 @@ export function ChatPane() {
         const errorMsg = errorData.error?.message || errorData.message || 'Failed to dispatch media message';
         alert(`Error: ${errorMsg}`);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to send media:', err);
-      alert(`Error sending media: ${err.message || String(err)}`);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      alert(`Error sending media: ${errMsg}`);
       throw err;
     }
   };
