@@ -685,13 +685,19 @@ conversationRouter.post('/:conversationId/media', async (c) => {
     throw new ApiError(400, 'Invalid request: file is missing or invalid', 'INVALID_FILE');
   }
 
+  const mimeType = file.type || '';
+  let whatsappType = 'document';
+  if (mimeType.startsWith('image/')) whatsappType = 'image';
+  else if (mimeType.startsWith('video/')) whatsappType = 'video';
+  else if (mimeType.startsWith('audio/')) whatsappType = 'audio';
+
   // 3. Upload to Meta
   const uploadResult = await uploadWhatsAppMedia({
     phoneNumberId: row.whatsappId,
     accessToken,
     file,
     fileName: file.name,
-    mimeType: file.type,
+    type: whatsappType,
   });
 
   return c.json({

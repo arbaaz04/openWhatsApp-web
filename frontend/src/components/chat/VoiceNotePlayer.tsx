@@ -11,15 +11,12 @@ interface VoiceNotePlayerProps {
 export const VoiceNotePlayer: React.FC<VoiceNotePlayerProps> = ({
   src,
   isOut,
-  avatarInitial = 'C',
 }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [playbackRate, setPlaybackRate] = useState(1);
 
-  // Sync state on audio end
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -43,7 +40,6 @@ export const VoiceNotePlayer: React.FC<VoiceNotePlayerProps> = ({
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
     audio.addEventListener('ended', handleEnded);
 
-    // Initial check in case it loaded before listeners bound
     if (audio.duration && !isNaN(audio.duration) && isFinite(audio.duration)) {
       setDuration(audio.duration);
     }
@@ -76,19 +72,6 @@ export const VoiceNotePlayer: React.FC<VoiceNotePlayerProps> = ({
     setCurrentTime(seekTo);
   };
 
-  const cyclePlaybackRate = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    let nextRate = 1;
-    if (playbackRate === 1) nextRate = 1.5;
-    else if (playbackRate === 1.5) nextRate = 2;
-    else nextRate = 1;
-
-    audio.playbackRate = nextRate;
-    setPlaybackRate(nextRate);
-  };
-
   const formatTime = (timeSecs: number) => {
     if (isNaN(timeSecs) || !isFinite(timeSecs)) return '0:00';
     const mins = Math.floor(timeSecs / 60);
@@ -99,86 +82,54 @@ export const VoiceNotePlayer: React.FC<VoiceNotePlayerProps> = ({
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
-    <div className={cn(
-      "flex items-center gap-3 p-2.5 rounded-xl min-w-[245px] sm:min-w-[290px] select-none shadow-sm border border-gray-100",
-      isOut 
-        ? "bg-[#128C7E]/40 border-[#128C7E]/20 text-white" 
-        : "bg-gray-50 border-gray-100 text-gray-800"
-    )}>
+    <div className="flex items-center gap-3 py-1 bg-transparent select-none min-w-[210px] sm:min-w-[250px]">
       <audio ref={audioRef} src={src} preload="metadata" />
 
       {/* Play/Pause Button */}
       <button
         onClick={togglePlay}
         className={cn(
-          "w-9 h-9 rounded-full flex items-center justify-center transition-all shrink-0 cursor-pointer active:scale-95 shadow-sm",
+          "w-8 h-8 rounded-full flex items-center justify-center transition-all shrink-0 cursor-pointer active:scale-95",
           isOut 
             ? "bg-white text-[#128C7E] hover:bg-gray-100" 
             : "bg-[#128C7E] text-white hover:bg-[#075E54]"
         )}
       >
         {isPlaying ? (
-          <Pause className="w-4 h-4 fill-current" />
+          <Pause className="w-3.5 h-3.5 fill-current" />
         ) : (
-          <Play className="w-4 h-4 fill-current ml-0.5" />
+          <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
         )}
       </button>
+
+      {/* Mic icon */}
+      <Mic className={cn("w-4 h-4 shrink-0", isOut ? "text-white/70" : "text-gray-400")} />
 
       {/* Progress & Time */}
       <div className="flex-1 min-w-0 flex flex-col gap-1">
         {/* Scrubber */}
-        <div className="relative flex items-center group/scrub">
-          <input
-            type="range"
-            min="0"
-            max={duration || 100}
-            value={currentTime}
-            onChange={handleSeek}
-            className={cn(
-              "w-full h-1 cursor-pointer appearance-none rounded-lg focus:outline-none bg-gray-200",
-              isOut ? "accent-white" : "accent-[#128C7E]"
-            )}
-            style={{
-              background: `linear-gradient(to right, ${isOut ? '#ffffff' : '#128C7E'} ${progress}%, ${isOut ? 'rgba(255,255,255,0.2)' : '#e2e8f0'} ${progress}%)`
-            }}
-          />
-        </div>
+        <input
+          type="range"
+          min="0"
+          max={duration || 100}
+          value={currentTime}
+          onChange={handleSeek}
+          className={cn(
+            "w-full h-1 cursor-pointer appearance-none rounded-lg focus:outline-none bg-gray-200",
+            isOut ? "accent-white" : "accent-[#128C7E]"
+          )}
+          style={{
+            background: `linear-gradient(to right, ${isOut ? '#ffffff' : '#128C7E'} ${progress}%, ${isOut ? 'rgba(255,255,255,0.2)' : '#e2e8f0'} ${progress}%)`
+          }}
+        />
 
         {/* Time display */}
         <div className={cn(
-          "flex justify-between items-center text-[10px] font-semibold leading-none",
-          isOut ? "text-white/80" : "text-gray-500"
+          "text-[10px] font-semibold leading-none",
+          isOut ? "text-white/70" : "text-gray-500"
         )}>
-          <span>{formatTime(currentTime)}</span>
-          <span>{formatTime(duration)}</span>
+          <span>{formatTime(isPlaying ? currentTime : duration)}</span>
         </div>
-      </div>
-
-      {/* Playback speed control */}
-      <button
-        onClick={cyclePlaybackRate}
-        className={cn(
-          "px-1.5 py-0.5 rounded text-[10px] font-bold tracking-tight border cursor-pointer shrink-0 transition-colors select-none",
-          isOut
-            ? "border-white/30 hover:bg-white/10 text-white"
-            : "border-gray-200 hover:bg-gray-100 text-gray-600"
-        )}
-      >
-        {playbackRate}x
-      </button>
-
-      {/* Avatar / Mic indicator */}
-      <div className="shrink-0 flex items-center justify-center">
-        {isOut ? (
-          <div className="w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center text-[11px] font-bold">
-            {avatarInitial}
-          </div>
-        ) : (
-          <div className="w-7 h-7 rounded-full bg-[#128C7E]/10 text-[#128C7E] flex items-center justify-center relative">
-            <Mic className="w-4 h-4" />
-            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full absolute top-0.5 right-0.5 animate-pulse" />
-          </div>
-        )}
       </div>
     </div>
   );

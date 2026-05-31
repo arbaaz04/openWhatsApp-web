@@ -362,7 +362,7 @@ export function MessageBubble({
         >
           {/* Header */}
           <div 
-            className="p-4 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between z-10"
+            className="p-4 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between z-20"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex flex-col">
@@ -394,20 +394,19 @@ export function MessageBubble({
           </div>
 
           {/* Content */}
-          <div className="flex-1 flex items-center justify-center p-4 relative">
+          <div className="flex-1 flex items-center justify-center p-4 relative z-10">
             {media.type === 'image' ? (
               <img 
                 src={mediaUrl} 
                 alt={media.caption || 'Image'} 
-                className="max-w-full max-h-[85vh] object-contain select-none animate-in zoom-in-95 duration-200"
-                onClick={(e) => e.stopPropagation()}
+                className="max-w-full max-h-[80vh] object-contain select-none animate-in zoom-in-95 duration-200 cursor-zoom-out"
               />
             ) : (
               <video 
                 src={mediaUrl} 
                 controls 
                 autoPlay
-                className="max-w-full max-h-[85vh] object-contain animate-in zoom-in-95 duration-200"
+                className="max-w-full max-h-[80vh] object-contain animate-in zoom-in-95 duration-200"
                 onClick={(e) => e.stopPropagation()}
               />
             )}
@@ -416,7 +415,7 @@ export function MessageBubble({
           {/* Footer / Caption */}
           {media.caption && (
             <div 
-              className="p-6 bg-gradient-to-t from-black/80 to-transparent flex justify-center text-center z-10"
+              className="p-6 bg-gradient-to-t from-black/80 to-transparent flex justify-center text-center z-20"
               onClick={(e) => e.stopPropagation()}
             >
               <p className="text-[13px] text-gray-200 max-w-2xl font-medium bg-black/50 px-4 py-2 rounded-xl backdrop-blur-sm shadow-md">

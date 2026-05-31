@@ -482,16 +482,16 @@ export async function uploadWhatsAppMedia(options: {
   accessToken: string;
   file: File | Blob;
   fileName: string;
-  mimeType: string;
+  type: string;
 }): Promise<{ id: string }> {
-  const { phoneNumberId, accessToken, file, fileName, mimeType } = options;
+  const { phoneNumberId, accessToken, file, fileName, type } = options;
   const log = createLogger({ requestId: 'meta-media-upload' });
   const url = `${META_GRAPH_BASE}/${phoneNumberId}/media`;
 
   const formData = new FormData();
   formData.append('messaging_product', 'whatsapp');
   formData.append('file', file, fileName);
-  formData.append('type', mimeType);
+  formData.append('type', type);
 
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {

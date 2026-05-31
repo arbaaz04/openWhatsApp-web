@@ -43,6 +43,7 @@ export function Composer({
   // Audio Recording State
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
+  const recordingDurationRef = useRef(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -80,6 +81,7 @@ export function Composer({
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunksRef.current = [];
+      recordingDurationRef.current = 0;
       
       let mimeType = 'audio/ogg; codecs=opus';
       if (!MediaRecorder.isTypeSupported(mimeType)) {
@@ -105,7 +107,7 @@ export function Composer({
         const ext = mimeType.includes('ogg') ? 'ogg' : 'webm';
         const file = new File([audioBlob], `voice_note.${ext}`, { type: mimeType });
 
-        if (audioChunksRef.current.length > 0 && recordingDuration > 0) {
+        if (audioChunksRef.current.length > 0 && recordingDurationRef.current > 0) {
           setIsUploading(true);
           try {
             await onSendMedia?.(file, 'voice', '', replyTo?.id);
@@ -116,6 +118,7 @@ export function Composer({
           }
         }
         setRecordingDuration(0);
+        recordingDurationRef.current = 0;
       };
 
       recorder.start();
@@ -123,7 +126,11 @@ export function Composer({
       setRecordingDuration(0);
 
       recordingIntervalRef.current = setInterval(() => {
-        setRecordingDuration((prev) => prev + 1);
+        setRecordingDuration((prev) => {
+          const next = prev + 1;
+          recordingDurationRef.current = next;
+          return next;
+        });
       }, 1000);
     } catch (err) {
       console.error('Failed to start recording:', err);
