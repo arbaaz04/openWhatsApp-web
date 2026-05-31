@@ -138,6 +138,49 @@ export const webhookService = {
         for (const msg of msgList) {
           const customerPhone = msg.from;
 
+          if (msg.type === 'revoke') {
+            const originalWamid = msg.revoke?.original_message_id;
+            if (originalWamid && phoneNumberId) {
+              logger.info('Processing incoming revoke (delete) message', { originalWamid });
+              try {
+                const updated = await messageRepository.revokeMessage(db, originalWamid);
+                if (updated) {
+                  // Broadcast to Durable Object WS
+                  if (env?.INBOX_SYNC) {
+                    const id = env.INBOX_SYNC.idFromName(phoneNumberId);
+                    const stub = env.INBOX_SYNC.get(id);
+                    try {
+                      await stub.fetch(
+                        new Request('http://internal/broadcast', {
+                          method: 'POST',
+                          headers: {
+                            'x-internal-auth': env.META_APP_SECRET,
+                          },
+                          body: JSON.stringify({
+                            type: 'revoke',
+                            messageId: updated.messageId,
+                            conversationId: updated.conversationId,
+                            wamid: originalWamid,
+                          }),
+                        })
+                      );
+                    } catch (err) {
+                      logger.error('Durable Object fetch crashed during revoke broadcast', {
+                        error: err instanceof Error ? err.message : String(err)
+                      });
+                    }
+                  }
+                }
+              } catch (e: unknown) {
+                logger.error('Failed to process message revoke', {
+                  error: e instanceof Error ? e.message : String(e),
+                  originalWamid,
+                });
+              }
+            }
+            continue;
+          }
+
           let bodyText: string | undefined;
           if (msg.type === 'text') {
             bodyText = msg.text?.body;

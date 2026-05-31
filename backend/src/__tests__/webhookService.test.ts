@@ -18,6 +18,7 @@ vi.mock('../repositories/messageRepository.js', () => ({
   messageRepository: {
     processIncomingMessage: vi.fn(),
     updateMessageStatus: vi.fn(),
+    revokeMessage: vi.fn(),
   },
 }));
 
@@ -79,6 +80,10 @@ describe('Webhook Service — Payload Processing', () => {
     vi.mocked(messageRepository.updateMessageStatus).mockResolvedValue({
       messageId: 10,
       conversationId: 20,
+    });
+    vi.mocked(messageRepository.revokeMessage).mockResolvedValue({
+      messageId: 5,
+      conversationId: 5,
     });
     vi.mocked(webhookDeliveryService.dispatchEvent).mockResolvedValue(undefined);
   });
@@ -199,5 +204,26 @@ describe('Webhook Service — Payload Processing', () => {
 
     // dispatchEvent should NOT have been called since env is missing
     expect(messageRepository.processIncomingMessage).toHaveBeenCalledOnce();
+  });
+
+  it('should process revoke type message and call revokeMessage', async () => {
+    const payload = basePayload();
+    payload.entry[0].changes[0].value.messages = [
+      {
+        from: 'cust456',
+        id: 'msg-revoke',
+        timestamp: '1234567890',
+        type: 'revoke',
+        revoke: {
+          original_message_id: 'wamid-to-delete-123',
+        },
+      } as any,
+    ];
+
+    await webhookService.processPayload(db, payload);
+
+    expect(messageRepository.revokeMessage).toHaveBeenCalledOnce();
+    expect(messageRepository.revokeMessage).toHaveBeenCalledWith(db, 'wamid-to-delete-123');
+    expect(messageRepository.processIncomingMessage).not.toHaveBeenCalled();
   });
 });

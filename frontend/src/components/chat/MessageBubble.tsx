@@ -202,15 +202,31 @@ export function MessageBubble({
       <div className={cn("max-w-[85%] flex flex-col relative", isOut ? "items-end" : "items-start")}>
         
         {/* Reply Action Trigger */}
-        <button 
-          onClick={() => onReply?.({ id, body, senderName })}
-          className={cn(
-            "absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 bg-white border border-gray-100 rounded-lg shadow-sm text-gray-400 hover:text-[#128C7E] z-10",
-            isOut ? "-left-10" : "-right-10"
-          )}
-        >
-          <Reply className="w-3.5 h-3.5" />
-        </button>
+        {body !== 'This message was deleted' && (
+          <button 
+            onClick={() => {
+              let displayBody = body;
+              if (media) {
+                const iconMap = {
+                  image: '📷 Photo',
+                  video: '📹 Video',
+                  voice: '🎤 Voice Note',
+                  audio: '🎵 Audio',
+                  document: '📄 Document',
+                };
+                const typeLabel = iconMap[media.type] || 'Media';
+                displayBody = body ? `${typeLabel}: ${body}` : typeLabel;
+              }
+              onReply?.({ id, body: displayBody, senderName });
+            }}
+            className={cn(
+              "absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 bg-white border border-gray-100 rounded-lg shadow-sm text-gray-400 hover:text-[#128C7E] z-10",
+              isOut ? "-left-10" : "-right-10"
+            )}
+          >
+            <Reply className="w-3.5 h-3.5" />
+          </button>
+        )}
 
         <div
           className={cn(
@@ -243,8 +259,20 @@ export function MessageBubble({
             </div>
           )}
 
-          {renderMedia()}
-          {body && <div className="whitespace-pre-wrap mt-1">{body}</div>}
+          {body !== 'This message was deleted' && renderMedia()}
+          {body && (
+            <div className={cn(
+              "whitespace-pre-wrap mt-1", 
+              body === 'This message was deleted' && "italic opacity-60 flex items-center gap-1.5 select-none"
+            )}>
+              {body === 'This message was deleted' && (
+                <svg fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 inline-block shrink-0">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+                </svg>
+              )}
+              {body}
+            </div>
+          )}
           
           {/* Inline Timestamp */}
           <div className={cn(

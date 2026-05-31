@@ -17,7 +17,7 @@ export interface Channel {
 }
 
 export interface WsMessage {
-  type: 'incoming' | 'outgoing' | 'replay' | 'sync_complete' | 'status_update';
+  type: 'incoming' | 'outgoing' | 'replay' | 'sync_complete' | 'status_update' | 'revoke';
   conversationId: number;
   messageId?: number | string;
   body?: string | null;

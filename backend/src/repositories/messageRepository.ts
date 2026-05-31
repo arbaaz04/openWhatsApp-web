@@ -212,13 +212,35 @@ export const messageRepository = {
     wamid: string,
     status: 'sent' | 'delivered' | 'read' | 'failed'
   ): Promise<{ messageId: number; conversationId: number } | null> {
-    const [updated] = await db
-      .update(messages)
-      .set({ status })
+    // 1. Fetch current status
+    const [current] = await db
+      .select({ status: messages.status, id: messages.id, conversationId: messages.conversationId })
+      .from(messages)
       .where(eq(messages.externalId, wamid))
-      .returning({ id: messages.id, conversationId: messages.conversationId });
+      .limit(1);
 
-    return updated ? { messageId: updated.id, conversationId: updated.conversationId } : null;
+    if (!current) return null;
+
+    // Enforce status hierarchy priority (read > delivered > failed > sent)
+    const statusPriority: Record<string, number> = {
+      sent: 1,
+      failed: 2,
+      delivered: 3,
+      read: 4,
+    };
+
+    const currentPriority = current.status ? (statusPriority[current.status] ?? 0) : 0;
+    const newPriority = statusPriority[status] ?? 0;
+
+    // Only update if the new status has a higher priority
+    if (newPriority > currentPriority) {
+      await db
+        .update(messages)
+        .set({ status })
+        .where(eq(messages.id, current.id));
+    }
+
+    return { messageId: current.id, conversationId: current.conversationId };
   },
 
   /**
@@ -259,5 +281,21 @@ export const messageRepository = {
       .limit(1);
 
     return (msg as MessageRow) || null;
+  },
+
+  /**
+   * Revokes (deletes) a message by its external ID (wamid).
+   */
+  async revokeMessage(
+    db: DrizzleDb,
+    wamid: string
+  ): Promise<{ messageId: number; conversationId: number } | null> {
+    const [updated] = await db
+      .update(messages)
+      .set({ body: 'This message was deleted' })
+      .where(eq(messages.externalId, wamid))
+      .returning({ id: messages.id, conversationId: messages.conversationId });
+
+    return updated ? { messageId: updated.id, conversationId: updated.conversationId } : null;
   },
 };

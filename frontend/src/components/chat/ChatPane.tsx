@@ -169,8 +169,31 @@ export function ChatPane() {
       if (data.type === 'status_update') {
         if (String(data.conversationId) === String(conversationId)) {
           setMessages(prev => {
+            const statusPriority: Record<string, number> = {
+              sent: 1,
+              failed: 2,
+              delivered: 3,
+              read: 4,
+            };
+            const next = prev.map(m => {
+              if (m.externalId === data.wamid || m.id === String(data.messageId)) {
+                const currentPriority = m.status ? (statusPriority[m.status] ?? 0) : 0;
+                const newPriority = data.status ? (statusPriority[data.status] ?? 0) : 0;
+                if (newPriority > currentPriority) {
+                  return { ...m, status: data.status };
+                }
+              }
+              return m;
+            });
+            putMessages(userId, conversationId, next);
+            return next;
+          });
+        }
+      } else if (data.type === 'revoke') {
+        if (String(data.conversationId) === String(conversationId)) {
+          setMessages(prev => {
             const next = prev.map(m => m.externalId === data.wamid || m.id === String(data.messageId)
-              ? { ...m, status: data.status }
+              ? { ...m, body: 'This message was deleted' }
               : m
             );
             putMessages(userId, conversationId, next);
@@ -445,9 +468,23 @@ export function ChatPane() {
                 );
                 if (found) {
                   const foundParsed = parseMessageBody(found.body);
+                  let displayBody = foundParsed.cleanBody;
+                  if (foundParsed.media) {
+                    const iconMap = {
+                      image: '📷 Photo',
+                      video: '📹 Video',
+                      voice: '🎤 Voice Note',
+                      audio: '🎵 Audio',
+                      document: '📄 Document',
+                    };
+                    const typeLabel = iconMap[foundParsed.media.type] || 'Media';
+                    displayBody = foundParsed.cleanBody 
+                      ? `${typeLabel}: ${foundParsed.cleanBody}` 
+                      : typeLabel;
+                  }
                   replyToMessage = {
                     id: found.id,
-                    body: foundParsed.cleanBody,
+                    body: displayBody,
                     senderName: found.senderName,
                   };
                 } else {
