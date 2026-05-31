@@ -679,13 +679,22 @@ conversationRouter.post('/:conversationId/media', async (c) => {
 
   // 2. Parse request body as multipart/form-data
   const body = await c.req.parseBody();
-  const file = body.file;
+  let file = body.file;
 
   if (!file || !(file instanceof File)) {
     throw new ApiError(400, 'Invalid request: file is missing or invalid', 'INVALID_FILE');
   }
 
-  const mimeType = file.type || '';
+  let mimeType = file.type || '';
+  let fileName = file.name || 'file';
+
+  // Override audio/webm to audio/ogg for Meta API validation compatibility
+  if (mimeType === 'audio/webm' || mimeType.includes('audio/webm') || fileName.endsWith('.webm')) {
+    mimeType = 'audio/ogg';
+    fileName = fileName.replace(/\.webm$/, '.ogg');
+    file = new File([file], fileName, { type: mimeType });
+  }
+
   let whatsappType = 'document';
   if (mimeType.startsWith('image/')) whatsappType = 'image';
   else if (mimeType.startsWith('video/')) whatsappType = 'video';
@@ -696,7 +705,7 @@ conversationRouter.post('/:conversationId/media', async (c) => {
     phoneNumberId: row.whatsappId,
     accessToken,
     file,
-    fileName: file.name,
+    fileName: fileName,
     type: whatsappType,
   });
 
