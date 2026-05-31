@@ -14,7 +14,7 @@ import { rateLimiter } from '../utils/rateLimiter.js';
 import { type DrizzleDb } from '../db/index.js';
 import { conversations, channels, teamMembers, messages } from '../db/schema.js';
 import { messageRepository } from '../repositories/messageRepository.js';
-import { sendWhatsAppMessage, fetchWithTimeout, extractMetaError, META_GRAPH_BASE, markMessageAsRead, sendTypingIndicator } from '../utils/metaApiClient.js';
+import { sendWhatsAppMessage, fetchWithTimeout, extractMetaError, META_GRAPH_BASE, markMessageAsRead, sendTypingIndicator, uploadWhatsAppMedia } from '../utils/metaApiClient.js';
 import { decrypt } from '../utils/encryption.js';
 import { eq, and, desc } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
@@ -658,6 +658,46 @@ conversationRouter.openapi(getMediaRoute, async (c) => {
       'Cache-Control': 'public, max-age=31536000', // cache media aggressively
     },
   });
+});
+
+// ---------------------------------------------------------------------------
+// POST /:conversationId/media — upload local media attachment to Meta
+// ---------------------------------------------------------------------------
+conversationRouter.post('/:conversationId/media', async (c) => {
+  const db = c.get('db');
+  const userId = c.get('userId');
+  const conversationId = parseInt(c.req.param('conversationId'), 10);
+
+  // 1. Enforce team ownership & RBAC validation
+  const row = await resolveAndAuthorize(db, conversationId, userId);
+
+  if (!row.accessToken || !row.whatsappId) {
+    throw new ApiError(503, 'Channel is not configured', 'MISCONFIGURED');
+  }
+
+  const accessToken = await decrypt(row.accessToken, c.env.DATA_ENCRYPTION_KEY);
+
+  // 2. Parse request body as multipart/form-data
+  const body = await c.req.parseBody();
+  const file = body.file;
+
+  if (!file || !(file instanceof File)) {
+    throw new ApiError(400, 'Invalid request: file is missing or invalid', 'INVALID_FILE');
+  }
+
+  // 3. Upload to Meta
+  const uploadResult = await uploadWhatsAppMedia({
+    phoneNumberId: row.whatsappId,
+    accessToken,
+    file,
+    fileName: file.name,
+    mimeType: file.type,
+  });
+
+  return c.json({
+    success: true,
+    mediaId: uploadResult.id,
+  }, 200);
 });
 
 // ---------------------------------------------------------------------------

@@ -62,9 +62,10 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// 6. Request body size guard — rejects payloads over 512KB to prevent memory exhaustion
+// 6. Request body size guard — rejects payloads over 512KB (or 25MB for media uploads) to prevent memory exhaustion
 app.use('*', async (c, next) => {
-  const MAX_BODY_BYTES = 512 * 1024;
+  const isMediaUpload = c.req.method === 'POST' && /\/api\/conversations\/\d+\/media/.test(c.req.path);
+  const MAX_BODY_BYTES = isMediaUpload ? 25 * 1024 * 1024 : 512 * 1024;
   const hasBody = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.req.method);
 
   if (!hasBody) {
@@ -79,7 +80,11 @@ app.use('*', async (c, next) => {
       throw new ApiError(400, 'Invalid Content-Length header', 'INVALID_CONTENT_LENGTH');
     }
     if (contentLength > MAX_BODY_BYTES) {
-      throw new ApiError(413, 'Request body too large (max 512KB)', 'PAYLOAD_TOO_LARGE');
+      throw new ApiError(
+        413,
+        `Request body too large (max ${isMediaUpload ? '25MB' : '512KB'})`,
+        'PAYLOAD_TOO_LARGE'
+      );
     }
     await next();
     return;
@@ -89,7 +94,11 @@ app.use('*', async (c, next) => {
   // Clone preserves the original body stream for downstream route handlers.
   const bodyBytes = await c.req.raw.clone().arrayBuffer();
   if (bodyBytes.byteLength > MAX_BODY_BYTES) {
-    throw new ApiError(413, 'Request body too large (max 512KB)', 'PAYLOAD_TOO_LARGE');
+    throw new ApiError(
+      413,
+      `Request body too large (max ${isMediaUpload ? '25MB' : '512KB'})`,
+      'PAYLOAD_TOO_LARGE'
+    );
   }
 
   await next();

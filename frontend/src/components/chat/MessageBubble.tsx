@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Reply, File, Download, Loader2, Check, CheckCheck } from 'lucide-react';
+import { Reply, File, Download, Loader2, Check, CheckCheck, X, Play } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../contexts/AuthContext';
+import { VoiceNotePlayer } from './VoiceNotePlayer';
 
 export interface Message {
   id: string;
@@ -49,6 +50,33 @@ export function MessageBubble({
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(!!media);
   const [error, setError] = useState(false);
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+
+  // Lock body scroll when Lightbox is active
+  useEffect(() => {
+    if (isLightboxOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isLightboxOpen]);
+
+  // Handle escape key to close
+  useEffect(() => {
+    if (!isLightboxOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsLightboxOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isLightboxOpen]);
 
   const handleQuotedMessageClick = (e: React.MouseEvent) => {
     if (!replyTo?.id) return;
@@ -139,29 +167,38 @@ export function MessageBubble({
             <img 
               src={mediaUrl} 
               alt={media.caption || 'Image attachment'} 
-              className="max-h-[300px] w-auto object-cover max-w-full block cursor-pointer"
-              onClick={() => window.open(mediaUrl, '_blank')}
+              className="max-h-[220px] w-auto object-cover max-w-full block cursor-pointer"
+              onClick={() => setIsLightboxOpen(true)}
             />
           </div>
         );
       case 'video':
         return (
-          <div className="rounded-lg overflow-hidden border border-gray-100/60 shadow-sm max-w-full my-1.5">
+          <div 
+            onClick={() => setIsLightboxOpen(true)}
+            className="rounded-lg overflow-hidden border border-gray-100/60 shadow-sm max-w-full my-1.5 relative cursor-pointer group/vid"
+          >
             <video 
               src={mediaUrl} 
-              controls 
-              className="max-h-[300px] w-full max-w-sm block object-contain bg-black"
+              className="max-h-[220px] w-full max-w-xs block object-cover bg-black"
+              preload="metadata"
             />
+            {/* Play Button Overlay */}
+            <div className="absolute inset-0 flex items-center justify-center bg-black/25 group-hover/vid:bg-black/35 transition-colors">
+              <div className="w-12 h-12 rounded-full bg-white/90 text-gray-900 flex items-center justify-center shadow-lg transition-transform group-hover/vid:scale-105">
+                <Play className="w-5 h-5 fill-current ml-0.5" />
+              </div>
+            </div>
           </div>
         );
       case 'voice':
       case 'audio':
         return (
-          <div className="my-1.5 py-1 px-0.5 min-w-[240px] sm:min-w-[280px]">
-            <audio 
+          <div className="my-1.5">
+            <VoiceNotePlayer 
               src={mediaUrl} 
-              controls 
-              className="w-full h-8 block"
+              isOut={isOut} 
+              avatarInitial={isOut ? 'A' : avatarInitial} 
             />
           </div>
         );
@@ -197,123 +234,198 @@ export function MessageBubble({
   };
 
   return (
-    <div className={cn(
-      'flex items-start gap-2 w-full mb-0.5 group relative', 
-      isOut ? 'justify-end' : 'justify-start', 
-      isFirstInRun ? 'mt-3' : ''
-    )}>
-      
-      {!isOut && (
-        <div className="w-6 h-6 shrink-0 flex items-center justify-center mt-1">
-          {isFirstInRun && (
-            <div className="w-6 h-6 rounded bg-[#128C7E] text-white text-[10px] font-medium flex items-center justify-center">
-              {avatarInitial || 'A'}
+    <>
+      <div className={cn(
+        'flex items-start gap-2 w-full mb-0.5 group relative', 
+        isOut ? 'justify-end' : 'justify-start', 
+        isFirstInRun ? 'mt-3' : ''
+      )}>
+        
+        {!isOut && (
+          <div className="w-6 h-6 shrink-0 flex items-center justify-center mt-1">
+            {isFirstInRun && (
+              <div className="w-6 h-6 rounded bg-[#128C7E] text-white text-[10px] font-medium flex items-center justify-center">
+                {avatarInitial || 'A'}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className={cn("max-w-[85%] flex flex-col relative", isOut ? "items-end" : "items-start")}>
+          
+          {/* Reply Action Trigger */}
+          {body !== 'This message was deleted' && (
+            <button 
+              onClick={() => {
+                let displayBody = body;
+                if (media) {
+                  const iconMap = {
+                    image: '📷 Photo',
+                    video: '📹 Video',
+                    voice: '🎤 Voice Note',
+                    audio: '🎵 Audio',
+                    document: '📄 Document',
+                  };
+                  const typeLabel = iconMap[media.type] || 'Media';
+                  displayBody = body ? `${typeLabel}: ${body}` : typeLabel;
+                }
+                onReply?.({ id, body: displayBody, senderName });
+              }}
+              className={cn(
+                "absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 bg-white border border-gray-100 rounded-lg shadow-sm text-gray-400 hover:text-[#128C7E] z-10",
+                isOut ? "-left-10" : "-right-10"
+              )}
+            >
+              <Reply className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          <div
+            id={`msg-bubble-${id}`}
+            className={cn(
+              'px-3.5 py-2 text-[13px] leading-relaxed relative overflow-hidden transition-all duration-300',
+              isOut
+                ? 'bg-[#128C7E] text-white'
+                : 'bg-white text-gray-900 border border-gray-200/60 shadow-sm',
+                
+              'rounded-lg',
+              isOut && !isFirstInRun && 'rounded-tr-none',
+              !isOut && !isFirstInRun && 'rounded-tl-none',
+              isOut && isFirstInRun && 'border-b border-[#075E54]/20'
+            )}
+          >
+            {/* Business Type Header */}
+            {type === 'business' && (
+               <div className="text-[10px] font-bold text-gray-500 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
+                 Business
+               </div>
+            )}
+
+            {/* Quoted Message Block */}
+            {replyTo && (
+              <div 
+                onClick={handleQuotedMessageClick}
+                className={cn(
+                  "p-2 mb-2 rounded border-l-4 text-[11px] leading-snug line-clamp-2 cursor-pointer hover:bg-black/25 transition-colors duration-200 select-none",
+                  isOut ? "bg-black/10 border-white/40 text-white/80" : "bg-gray-100 border-gray-300 text-gray-500"
+                )}
+              >
+                {replyTo.senderName && <span className="font-bold block mb-0.5">{replyTo.senderName}</span>}
+                {replyTo.body}
+              </div>
+            )}
+
+            {body !== 'This message was deleted' && renderMedia()}
+            {body && (
+              <div className={cn(
+                "whitespace-pre-wrap mt-1", 
+                body === 'This message was deleted' && "italic opacity-60 flex items-center gap-1.5 select-none"
+              )}>
+                {body === 'This message was deleted' && (
+                  <svg fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 inline-block shrink-0">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+                  </svg>
+                )}
+                {body}
+              </div>
+            )}
+            
+            {/* Inline Timestamp */}
+            <div className={cn(
+              "text-[10px] mt-1 flex justify-end items-center gap-1.5",
+              isOut ? "text-white/60" : "text-gray-400"
+            )}>
+              <span>{time}</span>
+              {isOut && (
+                <span className="shrink-0 flex items-center">
+                  {status === 'read' ? (
+                    <CheckCheck className="w-3.5 h-3.5 text-sky-300" />
+                  ) : status === 'delivered' ? (
+                    <CheckCheck className="w-3.5 h-3.5 text-white/50" />
+                  ) : status === 'failed' ? (
+                    <span className="text-red-300 font-bold leading-none select-none text-[12px]" title="Message failed to deliver">!</span>
+                  ) : (
+                    <Check className="w-3.5 h-3.5 text-white/40" />
+                  )}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Lightbox Modal */}
+      {isLightboxOpen && media && mediaUrl && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex flex-col justify-between text-white animate-in fade-in duration-200"
+          onClick={() => setIsLightboxOpen(false)}
+        >
+          {/* Header */}
+          <div 
+            className="p-4 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-col">
+              <span className="text-[14px] font-bold text-white leading-tight">
+                {senderName || (isOut ? 'You' : 'Customer')}
+              </span>
+              <span className="text-[11px] text-gray-300 font-medium mt-0.5">
+                {time}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <a 
+                href={mediaUrl} 
+                download={media.caption || `media_${media.id}`}
+                className="p-2 hover:bg-white/10 rounded-full transition-colors text-white flex items-center justify-center"
+                onClick={(e) => e.stopPropagation()}
+                title="Download"
+              >
+                <Download className="w-5 h-5" />
+              </a>
+              <button 
+                onClick={() => setIsLightboxOpen(false)}
+                className="p-2 hover:bg-white/10 rounded-full transition-colors text-white flex items-center justify-center cursor-pointer active:scale-95"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 flex items-center justify-center p-4 relative">
+            {media.type === 'image' ? (
+              <img 
+                src={mediaUrl} 
+                alt={media.caption || 'Image'} 
+                className="max-w-full max-h-[85vh] object-contain select-none animate-in zoom-in-95 duration-200"
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <video 
+                src={mediaUrl} 
+                controls 
+                autoPlay
+                className="max-w-full max-h-[85vh] object-contain animate-in zoom-in-95 duration-200"
+                onClick={(e) => e.stopPropagation()}
+              />
+            )}
+          </div>
+
+          {/* Footer / Caption */}
+          {media.caption && (
+            <div 
+              className="p-6 bg-gradient-to-t from-black/80 to-transparent flex justify-center text-center z-10"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p className="text-[13px] text-gray-200 max-w-2xl font-medium bg-black/50 px-4 py-2 rounded-xl backdrop-blur-sm shadow-md">
+                {media.caption}
+              </p>
             </div>
           )}
         </div>
       )}
-
-      <div className={cn("max-w-[85%] flex flex-col relative", isOut ? "items-end" : "items-start")}>
-        
-        {/* Reply Action Trigger */}
-        {body !== 'This message was deleted' && (
-          <button 
-            onClick={() => {
-              let displayBody = body;
-              if (media) {
-                const iconMap = {
-                  image: '📷 Photo',
-                  video: '📹 Video',
-                  voice: '🎤 Voice Note',
-                  audio: '🎵 Audio',
-                  document: '📄 Document',
-                };
-                const typeLabel = iconMap[media.type] || 'Media';
-                displayBody = body ? `${typeLabel}: ${body}` : typeLabel;
-              }
-              onReply?.({ id, body: displayBody, senderName });
-            }}
-            className={cn(
-              "absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 bg-white border border-gray-100 rounded-lg shadow-sm text-gray-400 hover:text-[#128C7E] z-10",
-              isOut ? "-left-10" : "-right-10"
-            )}
-          >
-            <Reply className="w-3.5 h-3.5" />
-          </button>
-        )}
-
-        <div
-          id={`msg-bubble-${id}`}
-          className={cn(
-            'px-3.5 py-2 text-[13px] leading-relaxed relative overflow-hidden transition-all duration-300',
-            isOut
-              ? 'bg-[#128C7E] text-white'
-              : 'bg-white text-gray-900 border border-gray-200/60 shadow-sm',
-              
-            'rounded-lg',
-            isOut && !isFirstInRun && 'rounded-tr-none',
-            !isOut && !isFirstInRun && 'rounded-tl-none',
-            isOut && isFirstInRun && 'border-b border-[#075E54]/20'
-          )}
-        >
-          {/* Business Type Header */}
-          {type === 'business' && (
-             <div className="text-[10px] font-bold text-gray-500 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
-               Business
-             </div>
-          )}
-
-          {/* Quoted Message Block */}
-          {replyTo && (
-            <div 
-              onClick={handleQuotedMessageClick}
-              className={cn(
-                "p-2 mb-2 rounded border-l-4 text-[11px] leading-snug line-clamp-2 cursor-pointer hover:bg-black/25 transition-colors duration-200 select-none",
-                isOut ? "bg-black/10 border-white/40 text-white/80" : "bg-gray-100 border-gray-300 text-gray-500"
-              )}
-            >
-              {replyTo.senderName && <span className="font-bold block mb-0.5">{replyTo.senderName}</span>}
-              {replyTo.body}
-            </div>
-          )}
-
-          {body !== 'This message was deleted' && renderMedia()}
-          {body && (
-            <div className={cn(
-              "whitespace-pre-wrap mt-1", 
-              body === 'This message was deleted' && "italic opacity-60 flex items-center gap-1.5 select-none"
-            )}>
-              {body === 'This message was deleted' && (
-                <svg fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 inline-block shrink-0">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
-                </svg>
-              )}
-              {body}
-            </div>
-          )}
-          
-          {/* Inline Timestamp */}
-          <div className={cn(
-            "text-[10px] mt-1 flex justify-end items-center gap-1.5",
-            isOut ? "text-white/60" : "text-gray-400"
-          )}>
-            <span>{time}</span>
-            {isOut && (
-              <span className="shrink-0 flex items-center">
-                {status === 'read' ? (
-                  <CheckCheck className="w-3.5 h-3.5 text-sky-300" />
-                ) : status === 'delivered' ? (
-                  <CheckCheck className="w-3.5 h-3.5 text-white/50" />
-                ) : status === 'failed' ? (
-                  <span className="text-red-300 font-bold leading-none select-none text-[12px]" title="Message failed to deliver">!</span>
-                ) : (
-                  <Check className="w-3.5 h-3.5 text-white/40" />
-                )}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+    </>
   );
 }

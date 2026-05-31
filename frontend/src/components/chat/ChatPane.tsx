@@ -442,6 +442,120 @@ export function ChatPane() {
       alert('Error: Network connection failure.');
     }
   };
+
+  const handleSendMedia = async (
+    file: File,
+    type: 'image' | 'video' | 'audio' | 'document' | 'voice',
+    caption?: string,
+    replyToId?: string
+  ) => {
+    const userId = session?.user?.id;
+    if (!session || !userId || !conversationId) return;
+
+    // Clear typing status immediately upon sending a message
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      const agentName = session?.user?.user_metadata?.full_name || session?.user?.email || 'Agent';
+      sendWsMessage(whatsappId, {
+        type: 'typing',
+        conversationId: parseInt(conversationId, 10),
+        isTyping: false,
+        userId,
+        userName: agentName
+      });
+    }
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
+
+      // 1. Upload to our proxy endpoint
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const uploadRes = await fetch(`${apiUrl}/api/conversations/${conversationId}/media`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: formData
+      });
+
+      if (!uploadRes.ok) {
+        const errData = await uploadRes.json().catch(() => ({}));
+        const errMsg = errData.error?.message || errData.message || 'File upload failed';
+        throw new Error(errMsg);
+      }
+
+      const uploadResult = await uploadRes.json();
+      const mediaId = uploadResult.mediaId;
+
+      // 2. Prepare outbound Meta payload
+      const metaType = type === 'voice' ? 'voice' : type;
+      const payload: Record<string, any> = {};
+      
+      if (metaType === 'document') {
+        payload[metaType] = {
+          id: mediaId,
+          filename: file.name
+        };
+      } else {
+        payload[metaType] = {
+          id: mediaId
+        };
+        if (caption && (metaType === 'image' || metaType === 'video')) {
+          payload[metaType].caption = caption;
+        }
+      }
+
+      // Format DB message body text
+      const bodyText = `[MEDIA:${type}:${mediaId}]${caption || ''}`;
+
+      const res = await fetch(`${apiUrl}/api/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          body: bodyText,
+          type: metaType,
+          payload,
+          replyToMessageId: replyToId
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && !messages.find(m => m.id === String(data.messageId))) {
+          const replyMsg = replyToId ? messages.find(m => m.id === replyToId) : null;
+          const dbBody = replyMsg ? `[REPLY:${replyMsg.externalId || ''}]${bodyText}` : bodyText;
+          const newMessage: ChatMessage = {
+            id: String(data.messageId),
+            body: dbBody,
+            direction: 'outgoing',
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            externalId: data.wamid || undefined
+          };
+          setMessages(prev => [...prev, newMessage]);
+          putSingleMessage(userId, conversationId, newMessage);
+          setReplyingTo(null);
+          setTimeout(scrollToBottom, 100);
+        }
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        const errorMsg = errorData.error?.message || errorData.message || 'Failed to dispatch media message';
+        alert(`Error: ${errorMsg}`);
+      }
+    } catch (err: any) {
+      console.error('Failed to send media:', err);
+      alert(`Error sending media: ${err.message || String(err)}`);
+      throw err;
+    }
+  };
  
   const handleSendTemplate = async (payload: Record<string, unknown>) => {
     const userId = session?.user?.id;
@@ -666,6 +780,7 @@ export function ChatPane() {
           replyTo={replyingTo} 
           onCancelReply={() => setReplyingTo(null)} 
           onSend={handleSendMessage}
+          onSendMedia={handleSendMedia}
           onToggleTemplates={() => setIsTemplatePickerOpen(true)}
           isExpired={isExpired}
           onTyping={handleAgentTyping}

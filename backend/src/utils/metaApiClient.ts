@@ -473,3 +473,70 @@ export async function sendTypingIndicator(options: {
     return false;
   }
 }
+
+/**
+ * Uploads media to Meta Cloud API to obtain a media ID.
+ */
+export async function uploadWhatsAppMedia(options: {
+  phoneNumberId: string;
+  accessToken: string;
+  file: File | Blob;
+  fileName: string;
+  mimeType: string;
+}): Promise<{ id: string }> {
+  const { phoneNumberId, accessToken, file, fileName, mimeType } = options;
+  const log = createLogger({ requestId: 'meta-media-upload' });
+  const url = `${META_GRAPH_BASE}/${phoneNumberId}/media`;
+
+  const formData = new FormData();
+  formData.append('messaging_product', 'whatsapp');
+  formData.append('file', file, fileName);
+  formData.append('type', mimeType);
+
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const backoffMs = INITIAL_BACKOFF_MS * 2 ** (attempt - 1);
+    try {
+      const response = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: formData,
+      });
+
+      const json = await response.json() as Record<string, unknown>;
+
+      if (!response.ok) {
+        const err = extractMetaError(json);
+        if (response.status < 500 && response.status !== 429) {
+          throw new MetaApiError(err);
+        }
+        lastError = new MetaApiError(err);
+      } else {
+        const mediaId = json.id as string;
+        if (!mediaId) {
+          throw new ApiError(502, 'Meta media upload succeeded but returned no ID', 'META_UNEXPECTED_RESPONSE');
+        }
+        return { id: mediaId };
+      }
+    } catch (err) {
+      if (err instanceof MetaApiError && err.statusCode < 500 && err.statusCode !== 429) {
+        throw err;
+      }
+      lastError = err;
+      log.warn('Meta media upload failed — will retry', {
+        attempt,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    if (attempt < MAX_RETRIES) {
+      await sleep(backoffMs);
+    }
+  }
+
+  if (lastError instanceof MetaApiError) throw lastError;
+  throw new ApiError(503, 'Unable to upload media to Meta Cloud API.', 'META_UNAVAILABLE');
+}
+
