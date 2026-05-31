@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Search, Edit, Smartphone } from 'lucide-react';
+import { Search, Edit, Smartphone, CheckCheck } from 'lucide-react';
 import { ConversationItem } from './ConversationItem';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { NewChatModal } from './NewChatModal';
+import { cn } from '../../lib/utils';
 
 import { useWebSocket } from '../../contexts/WebSocketContext';
 
@@ -32,6 +33,17 @@ export function InboxSidebar() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(() => Date.now());
   const navigate = useNavigate();
+
+  const [readReceiptsEnabled, setReadReceiptsEnabled] = useState(() => {
+    return localStorage.getItem('read_receipts_enabled') !== 'false';
+  });
+
+  const toggleReadReceipts = () => {
+    const nextVal = !readReceiptsEnabled;
+    setReadReceiptsEnabled(nextVal);
+    localStorage.setItem('read_receipts_enabled', String(nextVal));
+    window.dispatchEvent(new Event('read_receipts_toggle'));
+  };
 
   const handleStartChat = (phone: string) => {
     // Normalize phone (simple check)
@@ -63,13 +75,28 @@ export function InboxSidebar() {
       <div className="px-4 py-3 pb-2 border-b border-[#E5E7EB] shrink-0">
         <div className="flex justify-between items-center mb-3">
           <h1 className="text-[14px] font-semibold text-gray-900 tracking-tight">Inbox</h1>
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="text-gray-500 hover:text-gray-900 border border-gray-200 rounded shadow-sm p-1 transition-colors" 
-            title="New Message"
-          >
-            <Edit className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={toggleReadReceipts}
+              className={cn(
+                "border rounded shadow-sm p-1 transition-colors flex items-center gap-1 px-1.5 text-[10px] font-medium leading-none select-none h-6",
+                readReceiptsEnabled 
+                  ? "bg-sky-50 border-sky-200 text-sky-600 hover:bg-sky-100" 
+                  : "bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100 hover:text-gray-500"
+              )}
+              title={readReceiptsEnabled ? "Read Receipts: ON (Meta gets blue ticks)" : "Read Receipts: OFF (Meta does not get blue ticks)"}
+            >
+              <CheckCheck className={cn("w-3 h-3", readReceiptsEnabled ? "text-sky-500" : "text-gray-400")} />
+              <span>Read Ticks</span>
+            </button>
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="text-gray-500 hover:text-gray-900 border border-gray-200 rounded shadow-sm p-1 transition-colors flex items-center justify-center w-6 h-6" 
+              title="New Message"
+            >
+              <Edit className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
         
         <div className="relative">

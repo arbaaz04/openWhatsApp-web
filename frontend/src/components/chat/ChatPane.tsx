@@ -214,8 +214,9 @@ export function ChatPane() {
 
     const markAsRead = async () => {
       try {
+        const sendMetaReceipt = localStorage.getItem('read_receipts_enabled') !== 'false';
         const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
-        await fetch(`${apiUrl}/api/conversations/${conversationId}/read`, {
+        await fetch(`${apiUrl}/api/conversations/${conversationId}/read?sendMetaReceipt=${sendMetaReceipt}`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${session.access_token}`
@@ -228,11 +229,21 @@ export function ChatPane() {
 
     markAsRead();
 
+    // Listen for toggle updates to re-trigger markAsRead
+    const handleToggle = () => {
+      markAsRead();
+    };
+    window.addEventListener('read_receipts_toggle', handleToggle);
+
     // Re-trigger if the last message in the thread is incoming and not read yet
     const lastMsg = messages[messages.length - 1];
     if (lastMsg && lastMsg.direction === 'incoming' && lastMsg.status !== 'read') {
       markAsRead();
     }
+
+    return () => {
+      window.removeEventListener('read_receipts_toggle', handleToggle);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId, session, messages.length]);
 

@@ -107,7 +107,26 @@ webhookRouter.openapi(webhookPostRoute, async (c) => {
     entries: payload.entry.length,
   });
 
-  await c.env.WEBHOOK_QUEUE.send(payload);
+  const { createDb } = await import('../db/index.js');
+  const { webhookService } = await import('../services/webhookService.js');
+  
+  const db = (c.get as any)('db') || (c.env.HYPERDRIVE ? createDb(c.env.HYPERDRIVE.connectionString) : null);
+
+  if (db) {
+    try {
+      // Process synchronously for instant real-time websocket delivery
+      await webhookService.processPayload(db, payload, c.env);
+      log.info('Webhook processed successfully and synchronously');
+    } catch (err) {
+      log.warn('Synchronous webhook processing failed, falling back to queue', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+      await c.env.WEBHOOK_QUEUE.send(payload);
+    }
+  } else {
+    log.error('Database connection unavailable for synchronous webhook processing, falling back to queue');
+    await c.env.WEBHOOK_QUEUE.send(payload);
+  }
 
   return c.json({ success: true }, 200);
 });

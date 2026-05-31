@@ -671,10 +671,13 @@ const readConversationRoute = createRoute({
     params: z.object({
       conversationId: z.string().regex(/^\d+$/, 'Must be a numeric ID'),
     }),
+    query: z.object({
+      sendMetaReceipt: z.enum(['true', 'false']).optional(),
+    }),
   },
   responses: {
     200: {
-      description: 'Conversation marked as read in database and read receipt dispatched to Meta.',
+      description: 'Conversation marked as read in database and optionally read receipt dispatched to Meta.',
       content: {
         'application/json': {
           schema: z.object({
@@ -693,6 +696,7 @@ conversationRouter.openapi(readConversationRoute, async (c) => {
   const db = c.get('db');
   const userId = c.get('userId');
   const conversationId = parseInt(c.req.param('conversationId'), 10);
+  const sendMetaReceipt = c.req.query('sendMetaReceipt') !== 'false';
 
   // 1. Resolve conversation and verify ownership
   const row = await resolveAndAuthorize(db, conversationId, userId);
@@ -703,8 +707,8 @@ conversationRouter.openapi(readConversationRoute, async (c) => {
   // 3. Mark all incoming messages in the conversation as read in the database
   await messageRepository.markIncomingMessagesAsRead(db, conversationId);
 
-  // 4. Send read receipt to Meta for the latest incoming message if available
-  if (latestIncoming?.externalId && row.whatsappId && row.accessToken) {
+  // 4. Send read receipt to Meta for the latest incoming message if available and enabled
+  if (sendMetaReceipt && latestIncoming?.externalId && row.whatsappId && row.accessToken) {
     const accessToken = await decrypt(row.accessToken, c.env.DATA_ENCRYPTION_KEY);
     // Fire-and-forget so we don't block the client response on Meta's network call
     c.executionCtx?.waitUntil(
