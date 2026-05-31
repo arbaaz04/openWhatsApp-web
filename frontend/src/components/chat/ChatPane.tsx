@@ -54,7 +54,7 @@ export function ChatPane() {
       setTypingUsers(prev => {
         let changed = false;
         const next = { ...prev };
-        for (const [uid, info] of Object.entries(next)) {
+        for (const [uid, info] of Object.entries(next) as [string, { userName: string; timestamp: number }][]) {
           if (now - info.timestamp > 6000) { // 6 seconds timeout
             delete next[uid];
             changed = true;
@@ -759,14 +759,14 @@ export function ChatPane() {
                 />
               );
             })}
-            {Object.values(typingUsers).length > 0 && (
+            {(Object.values(typingUsers) as { userName: string; timestamp: number }[]).length > 0 && (
               <div className="flex items-center gap-1.5 text-[11px] text-[#075E54] italic font-semibold mt-2 pl-4 sm:pl-[10%] select-none animate-pulse">
                 <span className="flex gap-0.5 items-center mr-1 shrink-0">
                   <span className="w-1 h-1 bg-[#075E54] rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
                   <span className="w-1 h-1 bg-[#075E54] rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
                   <span className="w-1 h-1 bg-[#075E54] rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
                 </span>
-                <span>{Object.values(typingUsers).map(u => u.userName).join(', ')} is typing...</span>
+                <span>{(Object.values(typingUsers) as { userName: string; timestamp: number }[]).map(u => u.userName).join(', ')} is typing...</span>
               </div>
             )}
             <div ref={messagesEndRef} />
