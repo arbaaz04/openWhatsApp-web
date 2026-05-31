@@ -50,6 +50,20 @@ export function MessageBubble({
   const [loading, setLoading] = useState(!!media);
   const [error, setError] = useState(false);
 
+  const handleQuotedMessageClick = (e: React.MouseEvent) => {
+    if (!replyTo?.id) return;
+    e.stopPropagation();
+    const targetEl = document.getElementById(`msg-bubble-${replyTo.id}`);
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Flash/Highlight effect
+      targetEl.classList.add('ring-2', 'ring-sky-400', 'ring-offset-2');
+      setTimeout(() => {
+        targetEl.classList.remove('ring-2', 'ring-sky-400', 'ring-offset-2');
+      }, 1500);
+    }
+  };
+
   useEffect(() => {
     if (!media || !conversationId || !session?.access_token) return;
 
@@ -229,8 +243,9 @@ export function MessageBubble({
         )}
 
         <div
+          id={`msg-bubble-${id}`}
           className={cn(
-            'px-3.5 py-2 text-[13px] leading-relaxed relative overflow-hidden',
+            'px-3.5 py-2 text-[13px] leading-relaxed relative overflow-hidden transition-all duration-300',
             isOut
               ? 'bg-[#128C7E] text-white'
               : 'bg-white text-gray-900 border border-gray-200/60 shadow-sm',
@@ -250,10 +265,13 @@ export function MessageBubble({
 
           {/* Quoted Message Block */}
           {replyTo && (
-            <div className={cn(
-              "p-2 mb-2 rounded border-l-4 text-[11px] leading-snug line-clamp-2",
-              isOut ? "bg-black/10 border-white/40 text-white/80" : "bg-gray-100 border-gray-300 text-gray-500"
-            )}>
+            <div 
+              onClick={handleQuotedMessageClick}
+              className={cn(
+                "p-2 mb-2 rounded border-l-4 text-[11px] leading-snug line-clamp-2 cursor-pointer hover:bg-black/25 transition-colors duration-200 select-none",
+                isOut ? "bg-black/10 border-white/40 text-white/80" : "bg-gray-100 border-gray-300 text-gray-500"
+              )}
+            >
               {replyTo.senderName && <span className="font-bold block mb-0.5">{replyTo.senderName}</span>}
               {replyTo.body}
             </div>

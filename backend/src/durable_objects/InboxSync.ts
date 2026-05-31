@@ -175,6 +175,26 @@ export class InboxSync {
       return;
     }
 
+    if (typeof message === 'string') {
+      try {
+        const data = JSON.parse(message);
+        if (data.type === 'typing') {
+          // Broadcast to other connected agent sockets on this channel DO
+          for (const otherWs of this.ctx.getWebSockets()) {
+            if (otherWs === ws) continue;
+            try {
+              otherWs.send(message);
+            } catch {
+              // ignore
+            }
+          }
+          return;
+        }
+      } catch {
+        // ignore JSON parse errors
+      }
+    }
+
     log.info('Received upstream WS message', {
       phoneNumberId: attachment?.phoneNumberId,
       size: typeof message === 'string' ? message.length : message.byteLength,

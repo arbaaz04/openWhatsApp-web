@@ -17,7 +17,7 @@ export interface Channel {
 }
 
 export interface WsMessage {
-  type: 'incoming' | 'outgoing' | 'replay' | 'sync_complete' | 'status_update' | 'revoke';
+  type: 'incoming' | 'outgoing' | 'replay' | 'sync_complete' | 'status_update' | 'revoke' | 'typing';
   conversationId: number;
   messageId?: number | string;
   body?: string | null;
@@ -27,6 +27,9 @@ export interface WsMessage {
   customerPhone?: string;
   senderName?: string;
   status?: 'sent' | 'delivered' | 'read' | 'failed' | null;
+  isTyping?: boolean;
+  userId?: string;
+  userName?: string;
 }
 
 interface WebSocketContextType {
@@ -37,6 +40,7 @@ interface WebSocketContextType {
   isWsConnected: boolean;
   registerMessageListener: (listener: (msg: WsMessage) => void) => () => void;
   refreshConversations: () => Promise<void>;
+  sendWsMessage: (whatsappId: string, msg: unknown) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
@@ -328,6 +332,17 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Overall WS status indicator
   const isWsConnected = Object.values(connections).some(Boolean);
 
+  const sendWsMessage = useCallback((whatsappId: string, msg: unknown) => {
+    const socket = socketsRef.current[whatsappId];
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      try {
+        socket.send(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      } catch (err) {
+        console.error('Failed to send WS message:', err);
+      }
+    }
+  }, []);
+
   return (
     <WebSocketContext.Provider value={{
       conversations,
@@ -336,7 +351,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       channels,
       isWsConnected,
       registerMessageListener,
-      refreshConversations
+      refreshConversations,
+      sendWsMessage
     }}>
       {children}
     </WebSocketContext.Provider>

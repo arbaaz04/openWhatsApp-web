@@ -36,11 +36,41 @@ export function ChatPane() {
   const [channelBusinessName, setChannelBusinessName] = useState<string>('');
   const { session } = useAuth();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { isWsConnected, registerMessageListener } = useWebSocket();
+  const { isWsConnected, registerMessageListener, sendWsMessage } = useWebSocket();
+  const [typingUsers, setTypingUsers] = useState<Record<string, { userName: string; timestamp: number }>>({});
+
+  const isTypingRef = useRef(false);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingMetaThrottleRef = useRef<number>(0);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  // Clean up stale typing indicators from other agents
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setTypingUsers(prev => {
+        let changed = false;
+        const next = { ...prev };
+        for (const [uid, info] of Object.entries(next)) {
+          if (now - info.timestamp > 6000) { // 6 seconds timeout
+            delete next[uid];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 2000);
+
+    return () => {
+      clearInterval(interval);
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const lastLoadedConvIdRef = useRef<string | null>(null);
   const lastLoadedUserIdRef = useRef<string | null>(null);
@@ -200,6 +230,21 @@ export function ChatPane() {
             return next;
           });
         }
+      } else if (data.type === 'typing') {
+        if (String(data.conversationId) === String(conversationId)) {
+          setTypingUsers(prev => {
+            const next = { ...prev };
+            if (data.isTyping && data.userId) {
+              next[data.userId] = {
+                userName: data.userName || 'Someone',
+                timestamp: Date.now()
+              };
+            } else if (data.userId) {
+              delete next[data.userId];
+            }
+            return next;
+          });
+        }
       } else if (data.type === 'incoming' || data.type === 'outgoing') {
         if (String(data.conversationId) === String(conversationId)) {
           const newMessage: ChatMessage = {
@@ -282,9 +327,78 @@ export function ChatPane() {
     setReplyingTo({ id: msg.id, body: msg.body, senderName: msg.senderName });
   };
 
+  const handleAgentTyping = () => {
+    const userId = session?.user?.id;
+    if (!userId || !conversationId || !whatsappId) return;
+
+    const agentName = session?.user?.user_metadata?.full_name || session?.user?.email || 'Agent';
+
+    if (!isTypingRef.current) {
+      isTypingRef.current = true;
+      sendWsMessage(whatsappId, {
+        type: 'typing',
+        conversationId: parseInt(conversationId, 10),
+        isTyping: true,
+        userId,
+        userName: agentName
+      });
+    }
+
+    const now = Date.now();
+    if (now - typingMetaThrottleRef.current > 15000) {
+      typingMetaThrottleRef.current = now;
+      const triggerMetaTyping = async () => {
+        try {
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
+          await fetch(`${apiUrl}/api/conversations/${conversationId}/typing`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`
+            }
+          });
+        } catch (err) {
+          console.error('Failed to trigger Meta typing indicator:', err);
+        }
+      };
+      triggerMetaTyping();
+    }
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    
+    typingTimeoutRef.current = setTimeout(() => {
+      isTypingRef.current = false;
+      sendWsMessage(whatsappId, {
+        type: 'typing',
+        conversationId: parseInt(conversationId, 10),
+        isTyping: false,
+        userId,
+        userName: agentName
+      });
+    }, 3000);
+  };
+
   const handleSendMessage = async (body: string, replyToId?: string) => {
     const userId = session?.user?.id;
     if (!session || !userId || !conversationId) return;
+
+    // Clear typing status immediately upon sending a message
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      const agentName = session?.user?.user_metadata?.full_name || session?.user?.email || 'Agent';
+      sendWsMessage(whatsappId, {
+        type: 'typing',
+        conversationId: parseInt(conversationId, 10),
+        isTyping: false,
+        userId,
+        userName: agentName
+      });
+    }
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
       const res = await fetch(`${apiUrl}/api/conversations/${conversationId}/messages`, {
@@ -332,6 +446,23 @@ export function ChatPane() {
   const handleSendTemplate = async (payload: Record<string, unknown>) => {
     const userId = session?.user?.id;
     if (!session || !userId || !conversationId) return;
+
+    // Clear typing status immediately upon sending a template
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      const agentName = session?.user?.user_metadata?.full_name || session?.user?.email || 'Agent';
+      sendWsMessage(whatsappId, {
+        type: 'typing',
+        conversationId: parseInt(conversationId, 10),
+        isTyping: false,
+        userId,
+        userName: agentName
+      });
+    }
     try {
       // Find the template body text to show it optimistically
       const template = payload.template as { name: string };
@@ -514,6 +645,16 @@ export function ChatPane() {
                 />
               );
             })}
+            {Object.values(typingUsers).length > 0 && (
+              <div className="flex items-center gap-1.5 text-[11px] text-[#075E54] italic font-semibold mt-2 pl-4 sm:pl-[10%] select-none animate-pulse">
+                <span className="flex gap-0.5 items-center mr-1 shrink-0">
+                  <span className="w-1 h-1 bg-[#075E54] rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                  <span className="w-1 h-1 bg-[#075E54] rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                  <span className="w-1 h-1 bg-[#075E54] rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                </span>
+                <span>{Object.values(typingUsers).map(u => u.userName).join(', ')} is typing...</span>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </>
         )}
@@ -527,6 +668,7 @@ export function ChatPane() {
           onSend={handleSendMessage}
           onToggleTemplates={() => setIsTemplatePickerOpen(true)}
           isExpired={isExpired}
+          onTyping={handleAgentTyping}
         />
       </div>
 

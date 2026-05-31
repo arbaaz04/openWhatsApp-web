@@ -418,3 +418,58 @@ export async function markMessageAsRead(options: {
     return false;
   }
 }
+
+/**
+ * Sends a typing indicator to Meta Graph API for a specific conversation/message.
+ * This displays a "typing..." status to the user.
+ */
+export async function sendTypingIndicator(options: {
+  phoneNumberId: string;
+  accessToken: string;
+  wamid: string;
+}): Promise<boolean> {
+  const { phoneNumberId, accessToken, wamid } = options;
+  const log = createLogger({ requestId: 'meta-typing-indicator' });
+  const url = `${META_GRAPH_BASE}/${phoneNumberId}/messages`;
+
+  const payload = JSON.stringify({
+    messaging_product: 'whatsapp',
+    status: 'read',
+    message_id: wamid,
+    typing_indicator: {
+      type: 'text',
+    },
+  });
+
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: payload,
+    });
+
+    if (!response.ok) {
+      const errorJson = await response.json().catch(() => ({}));
+      log.warn('Failed to send typing indicator to Meta', {
+        phoneNumberId,
+        wamid,
+        status: response.status,
+        errorJson,
+      });
+      return false;
+    }
+
+    log.info('Successfully sent typing indicator to Meta', { phoneNumberId, wamid });
+    return true;
+  } catch (err) {
+    log.error('Failed to send typing indicator due to request error', {
+      phoneNumberId,
+      wamid,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}

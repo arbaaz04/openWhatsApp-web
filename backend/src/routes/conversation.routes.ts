@@ -14,7 +14,7 @@ import { rateLimiter } from '../utils/rateLimiter.js';
 import { type DrizzleDb } from '../db/index.js';
 import { conversations, channels, teamMembers, messages } from '../db/schema.js';
 import { messageRepository } from '../repositories/messageRepository.js';
-import { sendWhatsAppMessage, fetchWithTimeout, extractMetaError, META_GRAPH_BASE, markMessageAsRead } from '../utils/metaApiClient.js';
+import { sendWhatsAppMessage, fetchWithTimeout, extractMetaError, META_GRAPH_BASE, markMessageAsRead, sendTypingIndicator } from '../utils/metaApiClient.js';
 import { decrypt } from '../utils/encryption.js';
 import { eq, and, desc } from 'drizzle-orm';
 import type { WorkerBindings } from '../types/bindings.js';
@@ -713,6 +713,62 @@ conversationRouter.openapi(readConversationRoute, async (c) => {
     // Fire-and-forget so we don't block the client response on Meta's network call
     c.executionCtx?.waitUntil(
       markMessageAsRead({
+        phoneNumberId: row.whatsappId,
+        accessToken,
+        wamid: latestIncoming.externalId,
+      })
+    );
+  }
+
+  return c.json({ success: true as const }, 200);
+});
+
+// ---------------------------------------------------------------------------
+// POST /:conversationId/typing — send typing indicator to Meta
+// ---------------------------------------------------------------------------
+
+const typingConversationRoute = createRoute({
+  method: 'post',
+  path: '/:conversationId/typing',
+  request: {
+    params: z.object({
+      conversationId: z.string().regex(/^\d+$/, 'Must be a numeric ID'),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'Typing indicator dispatched to Meta.',
+      content: {
+        'application/json': {
+          schema: z.object({
+            success: z.literal(true),
+          }),
+        },
+      },
+    },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Conversation not found' },
+  },
+});
+
+conversationRouter.openapi(typingConversationRoute, async (c) => {
+  const db = c.get('db');
+  const userId = c.get('userId');
+  const conversationId = parseInt(c.req.param('conversationId'), 10);
+
+  // 1. Resolve conversation and verify ownership
+  const row = await resolveAndAuthorize(db, conversationId, userId);
+
+  // 2. Fetch the latest incoming message to send its wamid to Meta
+  const latestIncoming = await messageRepository.getLatestIncomingMessage(db, conversationId);
+
+  // 3. Send typing indicator to Meta if latest incoming message is available
+  if (latestIncoming?.externalId && row.whatsappId && row.accessToken) {
+    const accessToken = await decrypt(row.accessToken, c.env.DATA_ENCRYPTION_KEY);
+    // Fire-and-forget so we don't block the client response on Meta's network call
+    c.executionCtx?.waitUntil(
+      sendTypingIndicator({
         phoneNumberId: row.whatsappId,
         accessToken,
         wamid: latestIncoming.externalId,

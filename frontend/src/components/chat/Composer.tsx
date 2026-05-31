@@ -14,6 +14,7 @@ interface ComposerProps {
   onSend?: (body: string, replyToId?: string) => void;
   onToggleTemplates?: () => void;
   isExpired?: boolean;
+  onTyping?: () => void;
 }
 
 export function Composer({
@@ -21,7 +22,8 @@ export function Composer({
   onCancelReply,
   onSend,
   onToggleTemplates,
-  isExpired = false
+  isExpired = false,
+  onTyping
 }: ComposerProps) {
   const [text, setText] = useState('');
 
@@ -89,7 +91,10 @@ export function Composer({
               className="w-full bg-transparent border-none outline-none resize-none max-h-32 min-h-[60px] py-2.5 px-3 text-[13px] text-gray-900 placeholder:text-gray-500 font-medium"
               rows={1}
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value);
+                onTyping?.();
+              }}
               onKeyDown={handleKeyDown}
             />
             
