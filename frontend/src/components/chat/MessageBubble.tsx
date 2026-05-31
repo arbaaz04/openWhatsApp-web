@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Reply, File, Download, Loader2 } from 'lucide-react';
+import { Reply, File, Download, Loader2, Check, CheckCheck } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -26,6 +26,7 @@ interface MessageBubbleProps {
     id: string;
     caption: string;
   };
+  status?: 'sent' | 'delivered' | 'read' | 'failed' | null;
 }
 
 export function MessageBubble({ 
@@ -40,7 +41,8 @@ export function MessageBubble({
   senderName,
   type = 'text',
   conversationId,
-  media
+  media,
+  status
 }: MessageBubbleProps) {
   const isOut = direction === 'outgoing';
   const { session } = useAuth();
@@ -246,10 +248,23 @@ export function MessageBubble({
           
           {/* Inline Timestamp */}
           <div className={cn(
-            "text-[10px] mt-1 flex justify-end",
+            "text-[10px] mt-1 flex justify-end items-center gap-1.5",
             isOut ? "text-white/60" : "text-gray-400"
           )}>
-            {time}
+            <span>{time}</span>
+            {isOut && (
+              <span className="shrink-0 flex items-center">
+                {status === 'read' ? (
+                  <CheckCheck className="w-3.5 h-3.5 text-sky-300" />
+                ) : status === 'delivered' ? (
+                  <CheckCheck className="w-3.5 h-3.5 text-white/50" />
+                ) : status === 'failed' ? (
+                  <span className="text-red-300 font-bold leading-none select-none text-[12px]" title="Message failed to deliver">!</span>
+                ) : (
+                  <Check className="w-3.5 h-3.5 text-white/40" />
+                )}
+              </span>
+            )}
           </div>
         </div>
       </div>

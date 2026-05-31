@@ -17,7 +17,7 @@ export interface Channel {
 }
 
 export interface WsMessage {
-  type: 'incoming' | 'outgoing' | 'replay' | 'sync_complete';
+  type: 'incoming' | 'outgoing' | 'replay' | 'sync_complete' | 'status_update';
   conversationId: number;
   messageId?: number | string;
   body?: string | null;
@@ -26,7 +26,7 @@ export interface WsMessage {
   timestamp: string;
   customerPhone?: string;
   senderName?: string;
-  status?: string;
+  status?: 'sent' | 'delivered' | 'read' | 'failed' | null;
 }
 
 interface WebSocketContextType {

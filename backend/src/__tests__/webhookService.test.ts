@@ -17,6 +17,7 @@ import type { MetaWebhookPayload } from '../types/webhook.types.js';
 vi.mock('../repositories/messageRepository.js', () => ({
   messageRepository: {
     processIncomingMessage: vi.fn(),
+    updateMessageStatus: vi.fn(),
   },
 }));
 
@@ -74,6 +75,10 @@ describe('Webhook Service — Payload Processing', () => {
     vi.mocked(messageRepository.processIncomingMessage).mockResolvedValue({
       messageId: 1,
       conversationId: 1,
+    });
+    vi.mocked(messageRepository.updateMessageStatus).mockResolvedValue({
+      messageId: 10,
+      conversationId: 20,
     });
     vi.mocked(webhookDeliveryService.dispatchEvent).mockResolvedValue(undefined);
   });
@@ -146,6 +151,28 @@ describe('Webhook Service — Payload Processing', () => {
       'cust456',
       '[REPLY:wamid-original-123]I agree',
       'msg-reply'
+    );
+  });
+
+  it('should process statuses updates and call updateMessageStatus', async () => {
+    const payload = basePayload();
+    delete payload.entry[0].changes[0].value.messages;
+    payload.entry[0].changes[0].value.statuses = [
+      {
+        id: 'wamid-12345',
+        status: 'delivered',
+        timestamp: '1234567890',
+        recipient_id: 'cust456',
+      },
+    ];
+
+    await webhookService.processPayload(db, payload);
+
+    expect(messageRepository.updateMessageStatus).toHaveBeenCalledOnce();
+    expect(messageRepository.updateMessageStatus).toHaveBeenCalledWith(
+      db,
+      'wamid-12345',
+      'delivered'
     );
   });
 

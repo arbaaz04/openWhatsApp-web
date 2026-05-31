@@ -27,9 +27,114 @@ export const webhookService = {
       for (const change of entry.changes) {
         if (change.field !== 'messages') continue;
 
-        const { metadata, messages: msgList = [] } = change.value;
+        const { metadata, messages: msgList = [], statuses: statusList = [] } = change.value;
         const phoneNumberId = metadata.phone_number_id;
 
+        // 1. Handle incoming message status updates (sent, delivered, read, failed)
+        interface MetaStatusObject {
+          id: string;
+          status: 'sent' | 'delivered' | 'read' | 'failed';
+          timestamp: string;
+          recipient_id: string;
+          errors?: Array<{ code: number; message: string }>;
+        }
+
+        for (const statusObj of statusList as unknown as MetaStatusObject[]) {
+          const wamid = statusObj.id;
+          const status = statusObj.status;
+
+          if (!phoneNumberId || !wamid || !status) continue;
+
+          logger.info('Processing incoming status update', { wamid, status, phoneNumberId });
+
+          try {
+            const updated = await messageRepository.updateMessageStatus(db, wamid, status);
+
+            if (updated) {
+              // Broadcast status update over WebSockets
+              if (env?.INBOX_SYNC) {
+                const id = env.INBOX_SYNC.idFromName(phoneNumberId);
+                const stub = env.INBOX_SYNC.get(id);
+                try {
+                  await stub.fetch(
+                    new Request('http://internal/broadcast', {
+                      method: 'POST',
+                      headers: {
+                        'x-internal-auth': env.META_APP_SECRET,
+                      },
+                      body: JSON.stringify({
+                        type: 'status_update',
+                        messageId: updated.messageId,
+                        conversationId: updated.conversationId,
+                        status,
+                        wamid,
+                        phoneNumberId,
+                      }),
+                    })
+                  );
+                } catch (err) {
+                  logger.error('Durable Object fetch crashed during status broadcast', {
+                    error: err instanceof Error ? err.message : String(err)
+                  });
+                }
+              }
+
+              // Dispatch user webhook event (message.delivered / read / failed)
+              if (env?.DATA_ENCRYPTION_KEY) {
+                try {
+                  const { conversations } = await import('../db/schema.js');
+                  const { eq } = await import('drizzle-orm');
+
+                  const [convRow] = await db
+                    .select({ channelId: conversations.channelId, customerNumber: conversations.customerNumber })
+                    .from(conversations)
+                    .where(eq(conversations.id, updated.conversationId))
+                    .limit(1);
+
+                  if (convRow) {
+                    const eventName = `message.${status}` as any;
+                    if (status === 'delivered' || status === 'read' || status === 'failed') {
+                      const errorCode = statusObj.errors?.[0]?.code;
+                      const errorMessage = statusObj.errors?.[0]?.message;
+
+                      void webhookDeliveryService.dispatchEvent({
+                        eventName,
+                        channelId: convRow.channelId,
+                        eventData: {
+                          messageId: updated.messageId,
+                          channelId: convRow.channelId,
+                          customerNumber: convRow.customerNumber,
+                          wamid,
+                          timestamp: new Date(parseInt(statusObj.timestamp, 10) * 1000).toISOString(),
+                          ...(errorCode ? { errorCode } : {}),
+                          ...(errorMessage ? { errorMessage } : {}),
+                        },
+                        rawMetaPayload: payload,
+                        encryptionKey: env.DATA_ENCRYPTION_KEY,
+                        db,
+                        env,
+                      });
+                    }
+                  }
+                } catch (err) {
+                  logger.warn('Failed to dispatch user webhooks for status update', {
+                    wamid,
+                    error: err instanceof Error ? err.message : String(err),
+                  });
+                }
+              }
+            }
+          } catch (e: unknown) {
+            logger.error('Failed to process status update', {
+              error: e instanceof Error ? e.message : String(e),
+              wamid,
+              status,
+              phoneNumberId,
+            });
+          }
+        }
+
+        // 2. Handle incoming messages
         for (const msg of msgList) {
           const customerPhone = msg.from;
 

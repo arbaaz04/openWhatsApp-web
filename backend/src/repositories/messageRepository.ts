@@ -203,4 +203,61 @@ export const messageRepository = {
 
     return { items, hasMore, nextCursor };
   },
+
+  /**
+   * Updates the delivery/read status of an outbound message by its external ID (wamid).
+   */
+  async updateMessageStatus(
+    db: DrizzleDb,
+    wamid: string,
+    status: 'sent' | 'delivered' | 'read' | 'failed'
+  ): Promise<{ messageId: number; conversationId: number } | null> {
+    const [updated] = await db
+      .update(messages)
+      .set({ status })
+      .where(eq(messages.externalId, wamid))
+      .returning({ id: messages.id, conversationId: messages.conversationId });
+
+    return updated ? { messageId: updated.id, conversationId: updated.conversationId } : null;
+  },
+
+  /**
+   * Marks all incoming messages in a conversation as read in the database.
+   */
+  async markIncomingMessagesAsRead(
+    db: DrizzleDb,
+    conversationId: number
+  ): Promise<void> {
+    await db
+      .update(messages)
+      .set({ status: 'read' as const })
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          eq(messages.direction, 'incoming' as const)
+        )
+      );
+  },
+
+  /**
+   * Fetches the latest incoming message in a conversation.
+   */
+  async getLatestIncomingMessage(
+    db: DrizzleDb,
+    conversationId: number
+  ): Promise<MessageRow | null> {
+    const [msg] = await db
+      .select()
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          eq(messages.direction, 'incoming' as const)
+        )
+      )
+      .orderBy(desc(messages.id))
+      .limit(1);
+
+    return (msg as MessageRow) || null;
+  },
 };

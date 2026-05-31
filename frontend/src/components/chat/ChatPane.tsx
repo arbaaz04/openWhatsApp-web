@@ -22,6 +22,7 @@ interface ChatMessage {
   type?: 'text' | 'business';
   replyTo?: string; // ID of message replied to
   externalId?: string;
+  status?: 'sent' | 'delivered' | 'read' | 'failed' | null;
 }
 
 export function ChatPane() {
@@ -82,13 +83,14 @@ export function ChatPane() {
             // But here we rely on the messages.
             
             // Backend returns newest first, we want oldest first for display
-            const formatted = data.messages.map((m: { id: number; body: string | null; direction: string; createdAt: string; externalId?: string | null }) => ({
+            const formatted = data.messages.map((m: { id: number; body: string | null; direction: string; createdAt: string; externalId?: string | null; status?: 'sent' | 'delivered' | 'read' | 'failed' | null }) => ({
               id: String(m.id),
               body: m.body || '',
               direction: m.direction === 'echo' ? 'outgoing' : m.direction,
               time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               senderName: m.direction === 'incoming' ? 'Customer' : undefined,
-              externalId: m.externalId || undefined
+              externalId: m.externalId || undefined,
+              status: m.status || undefined
             })).reverse();
             setMessages(formatted);
             putMessages(userId, conversationId, formatted);
@@ -164,7 +166,18 @@ export function ChatPane() {
     if (!whatsappId || !conversationId || !userId) return;
 
     const unsubscribe = registerMessageListener((data) => {
-      if (data.type === 'incoming' || data.type === 'outgoing') {
+      if (data.type === 'status_update') {
+        if (String(data.conversationId) === String(conversationId)) {
+          setMessages(prev => {
+            const next = prev.map(m => m.externalId === data.wamid || m.id === String(data.messageId)
+              ? { ...m, status: data.status }
+              : m
+            );
+            putMessages(userId, conversationId, next);
+            return next;
+          });
+        }
+      } else if (data.type === 'incoming' || data.type === 'outgoing') {
         if (String(data.conversationId) === String(conversationId)) {
           const newMessage: ChatMessage = {
             id: String(data.messageId),
@@ -172,7 +185,8 @@ export function ChatPane() {
             direction: data.type === 'incoming' ? 'incoming' : 'outgoing',
             time: new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             senderName: data.type === 'incoming' ? 'Customer' : undefined,
-            externalId: data.wamid || undefined
+            externalId: data.wamid || undefined,
+            status: data.type === 'outgoing' ? 'sent' : undefined
           };
 
           setMessages(prev => {
@@ -193,6 +207,34 @@ export function ChatPane() {
 
     return unsubscribe;
   }, [whatsappId, conversationId, registerMessageListener, session?.user?.id]);
+
+  // Automatically mark conversation as read when conversation is loaded or when new incoming messages are received
+  useEffect(() => {
+    if (!session || !conversationId) return;
+
+    const markAsRead = async () => {
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
+        await fetch(`${apiUrl}/api/conversations/${conversationId}/read`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        });
+      } catch (err) {
+        console.error('Failed to mark conversation as read:', err);
+      }
+    };
+
+    markAsRead();
+
+    // Re-trigger if the last message in the thread is incoming and not read yet
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg && lastMsg.direction === 'incoming' && lastMsg.status !== 'read') {
+      markAsRead();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, session, messages.length]);
 
   // Calculate session expiration
   const isExpired = !lastCustomerMessageAt || 
@@ -420,6 +462,7 @@ export function ChatPane() {
                   replyTo={replyToMessage}
                   onReply={handleReply}
                   avatarInitial="C"
+                  status={m.status}
                 />
               );
             })}

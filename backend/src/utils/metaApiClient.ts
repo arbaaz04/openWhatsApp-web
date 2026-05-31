@@ -366,3 +366,55 @@ function metaCodeToMessage(code: number, rawMessage: string): string {
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+/**
+ * Sends a read receipt for a specific incoming message to Meta Graph API.
+ * This marks the message (and previous ones) as read (blue ticks) for the customer.
+ */
+export async function markMessageAsRead(options: {
+  phoneNumberId: string;
+  accessToken: string;
+  wamid: string;
+}): Promise<boolean> {
+  const { phoneNumberId, accessToken, wamid } = options;
+  const log = createLogger({ requestId: 'meta-read-receipt' });
+  const url = `${META_GRAPH_BASE}/${phoneNumberId}/messages`;
+
+  const payload = JSON.stringify({
+    messaging_product: 'whatsapp',
+    status: 'read',
+    message_id: wamid,
+  });
+
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: payload,
+    });
+
+    if (!response.ok) {
+      const errorJson = await response.json().catch(() => ({}));
+      log.warn('Failed to send read receipt to Meta', {
+        phoneNumberId,
+        wamid,
+        status: response.status,
+        errorJson,
+      });
+      return false;
+    }
+
+    log.info('Successfully marked message as read on Meta', { phoneNumberId, wamid });
+    return true;
+  } catch (err) {
+    log.error('Failed to mark message as read due to request error', {
+      phoneNumberId,
+      wamid,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
