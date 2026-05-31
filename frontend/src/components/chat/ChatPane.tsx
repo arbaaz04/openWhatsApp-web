@@ -22,7 +22,8 @@ interface ChatMessage {
   type?: 'text' | 'business';
   replyTo?: string; // ID of message replied to
   externalId?: string;
-  status?: 'sent' | 'delivered' | 'read' | 'failed' | null;
+  status?: 'uploading' | 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | null;
+  localFile?: File;
 }
 
 export function ChatPane() {
@@ -399,6 +400,24 @@ export function ChatPane() {
         userName: agentName
       });
     }
+
+    const tempId = `opt-${Date.now()}`;
+    const replyMsg = replyToId ? messages.find(m => m.id === replyToId) : null;
+    const dbBody = replyMsg ? `[REPLY:${replyMsg.externalId || ''}]${body}` : body;
+
+    const optimisticMessage: ChatMessage = {
+      id: tempId,
+      body: dbBody,
+      direction: 'outgoing',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: 'sending'
+    };
+
+    // Optimistically add to messages list
+    setMessages(prev => [...prev, optimisticMessage]);
+    setReplyingTo(null);
+    setTimeout(scrollToBottom, 50);
+
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
       const res = await fetch(`${apiUrl}/api/conversations/${conversationId}/messages`, {
@@ -416,30 +435,28 @@ export function ChatPane() {
       
       if (res.ok) {
         const data = await res.json();
-        // The WebSocket will broadcast this back to us as well, but we can optimistically update
-        if (data.success && !messages.find(m => m.id === String(data.messageId))) {
-            const replyMsg = replyToId ? messages.find(m => m.id === replyToId) : null;
-            const dbBody = replyMsg ? `[REPLY:${replyMsg.externalId || ''}]${body}` : body;
-            const newMessage: ChatMessage = {
-              id: String(data.messageId),
-              body: dbBody,
-              direction: 'outgoing',
-              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              externalId: data.wamid || undefined
-            };
-            setMessages(prev => [...prev, newMessage]);
-            putSingleMessage(userId, conversationId, newMessage);
-            setReplyingTo(null);
-            setTimeout(scrollToBottom, 100);
+        if (data.success) {
+          const finalMessage: ChatMessage = {
+            id: String(data.messageId),
+            body: dbBody,
+            direction: 'outgoing',
+            time: optimisticMessage.time,
+            externalId: data.wamid || undefined,
+            status: 'sent'
+          };
+          setMessages(prev => prev.map(m => m.id === tempId ? finalMessage : m));
+          putSingleMessage(userId, conversationId, finalMessage);
         }
       } else {
         const errorData = await res.json().catch(() => ({}));
         const errorMsg = errorData.error?.message || errorData.message || 'Failed to send message';
         alert(`Error: ${errorMsg}`);
+        setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
       }
     } catch (err) {
       console.error('Failed to send message:', err);
       alert('Error: Network connection failure.');
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
     }
   };
 
@@ -469,6 +486,25 @@ export function ChatPane() {
       });
     }
 
+    const tempId = `opt-${Date.now()}`;
+    const replyMsg = replyToId ? messages.find(m => m.id === replyToId) : null;
+    const bodyText = `[MEDIA:${type}:temp-media-id]${caption || ''}`;
+    const dbBody = replyMsg ? `[REPLY:${replyMsg.externalId || ''}]${bodyText}` : bodyText;
+
+    // Create optimistic media message with localFile set
+    const optimisticMessage: ChatMessage = {
+      id: tempId,
+      body: dbBody,
+      direction: 'outgoing',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: 'uploading',
+      localFile: file
+    };
+
+    setMessages(prev => [...prev, optimisticMessage]);
+    setReplyingTo(null);
+    setTimeout(scrollToBottom, 50);
+
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
@@ -493,6 +529,9 @@ export function ChatPane() {
       const uploadResult = await uploadRes.json();
       const mediaId = uploadResult.mediaId;
 
+      // Update message status to sending once upload completes
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'sending' } : m));
+
       // 2. Prepare outbound Meta payload
       const metaType = type === 'voice' ? 'voice' : type;
       const payload: Record<string, unknown> = {};
@@ -513,7 +552,8 @@ export function ChatPane() {
       }
 
       // Format DB message body text
-      const bodyText = `[MEDIA:${type}:${mediaId}]${caption || ''}`;
+      const finalBodyText = `[MEDIA:${type}:${mediaId}]${caption || ''}`;
+      const finalDbBody = replyMsg ? `[REPLY:${replyMsg.externalId || ''}]${finalBodyText}` : finalBodyText;
 
       const res = await fetch(`${apiUrl}/api/conversations/${conversationId}/messages`, {
         method: 'POST',
@@ -522,7 +562,7 @@ export function ChatPane() {
           'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          body: bodyText,
+          body: finalBodyText,
           type: metaType,
           payload,
           replyToMessageId: replyToId
@@ -531,31 +571,29 @@ export function ChatPane() {
 
       if (res.ok) {
         const data = await res.json();
-        if (data.success && !messages.find(m => m.id === String(data.messageId))) {
-          const replyMsg = replyToId ? messages.find(m => m.id === replyToId) : null;
-          const dbBody = replyMsg ? `[REPLY:${replyMsg.externalId || ''}]${bodyText}` : bodyText;
-          const newMessage: ChatMessage = {
+        if (data.success) {
+          const finalMessage: ChatMessage = {
             id: String(data.messageId),
-            body: dbBody,
+            body: finalDbBody,
             direction: 'outgoing',
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            externalId: data.wamid || undefined
+            time: optimisticMessage.time,
+            externalId: data.wamid || undefined,
+            status: 'sent'
           };
-          setMessages(prev => [...prev, newMessage]);
-          putSingleMessage(userId, conversationId, newMessage);
-          setReplyingTo(null);
-          setTimeout(scrollToBottom, 100);
+          setMessages(prev => prev.map(m => m.id === tempId ? finalMessage : m));
+          putSingleMessage(userId, conversationId, finalMessage);
         }
       } else {
         const errorData = await res.json().catch(() => ({}));
         const errorMsg = errorData.error?.message || errorData.message || 'Failed to dispatch media message';
         alert(`Error: ${errorMsg}`);
+        setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to send media:', err);
       const errMsg = err instanceof Error ? err.message : String(err);
       alert(`Error sending media: ${errMsg}`);
-      throw err;
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
     }
   };
  
@@ -758,6 +796,7 @@ export function ChatPane() {
                   onReply={handleReply}
                   avatarInitial="C"
                   status={m.status}
+                  localFile={m.localFile}
                 />
               );
             })}

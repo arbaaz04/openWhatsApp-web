@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Reply, File, Download, Loader2, Check, CheckCheck, X, Play } from 'lucide-react';
+import { Reply, File, Download, Loader2, Check, CheckCheck, X, Play, Clock, Mic } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../contexts/AuthContext';
 import { VoiceNotePlayer } from './VoiceNotePlayer';
@@ -27,7 +27,8 @@ interface MessageBubbleProps {
     id: string;
     caption: string;
   };
-  status?: 'sent' | 'delivered' | 'read' | 'failed' | null;
+  status?: 'uploading' | 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | null;
+  localFile?: File;
 }
 
 export function MessageBubble({ 
@@ -43,7 +44,8 @@ export function MessageBubble({
   type = 'text',
   conversationId,
   media,
-  status
+  status,
+  localFile
 }: MessageBubbleProps) {
   const isOut = direction === 'outgoing';
   const { session } = useAuth();
@@ -51,6 +53,19 @@ export function MessageBubble({
   const [loading, setLoading] = useState(!!media);
   const [error, setError] = useState(false);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+
+  // Load local file for optimistic media preview
+  useEffect(() => {
+    if (localFile) {
+      const url = URL.createObjectURL(localFile);
+      setMediaUrl(url);
+      setLoading(false);
+      setError(false);
+      return () => {
+        URL.revokeObjectURL(url);
+      };
+    }
+  }, [localFile]);
 
   // Lock body scroll when Lightbox is active
   useEffect(() => {
@@ -93,6 +108,7 @@ export function MessageBubble({
   };
 
   useEffect(() => {
+    if (localFile) return;
     if (!media || !conversationId || !session?.access_token) return;
 
     let active = true;
@@ -141,6 +157,68 @@ export function MessageBubble({
   }, [media?.id, conversationId, session?.access_token]);
 
   const renderMedia = () => {
+    if (status === 'uploading') {
+      const mediaType = media?.type || (
+        localFile?.type.startsWith('image/') ? 'image' :
+        localFile?.type.startsWith('video/') ? 'video' :
+        (localFile?.type.startsWith('audio/') || localFile?.name?.endsWith('.ogg')) ? 'voice' :
+        'document'
+      );
+      
+      return (
+        <div className="rounded-lg overflow-hidden max-w-full my-1.5 relative group/upload">
+          {mediaType === 'image' && mediaUrl ? (
+            <div className="relative border border-gray-100/60 shadow-sm rounded-lg overflow-hidden">
+              <img src={mediaUrl} className="max-h-[200px] w-auto object-cover max-w-full block opacity-60 blur-[1px]" alt="Uploading..." />
+              <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                <Loader2 className="w-8 h-8 animate-spin text-[#128C7E]" />
+              </div>
+            </div>
+          ) : mediaType === 'video' && mediaUrl ? (
+            <div className="relative border border-gray-100/60 shadow-sm rounded-lg overflow-hidden">
+              <video src={mediaUrl} className="max-h-[200px] w-full max-w-xs block object-cover opacity-60 blur-[1px]" />
+              <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                <Loader2 className="w-8 h-8 animate-spin text-[#128C7E]" />
+              </div>
+            </div>
+          ) : (mediaType === 'audio' || mediaType === 'voice') ? (
+            <div className="flex items-center gap-3 py-1 bg-transparent select-none min-w-[210px] sm:min-w-[250px] opacity-60">
+              <div className={cn(
+                "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
+                isOut ? "bg-white text-[#128C7E]" : "bg-[#128C7E] text-white"
+              )}>
+                <Loader2 className="w-4 h-4 animate-spin" />
+              </div>
+              <Mic className={cn("w-4 h-4 shrink-0", isOut ? "text-white/70" : "text-gray-400")} />
+              <div className="flex-1 min-w-0 flex flex-col gap-1">
+                <div className={cn("w-full h-1 rounded-lg", isOut ? "bg-white/20" : "bg-gray-200")} />
+                <div className={cn("text-[10px] font-semibold leading-none", isOut ? "text-white/70" : "text-gray-500")}>
+                  <span>Uploading voice note...</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-3 rounded-lg border border-gray-200/80 bg-gray-50 flex items-center justify-between gap-4 max-w-xs">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="p-2 bg-gray-100 text-gray-500 rounded-lg shrink-0">
+                  <File className="w-5 h-5 animate-pulse" />
+                </div>
+                <div className="min-w-0 flex flex-col">
+                  <span className="text-[12px] font-bold text-gray-900 truncate">
+                    {localFile?.name || 'Uploading file...'}
+                  </span>
+                  <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider leading-none mt-0.5 animate-pulse">
+                    Uploading...
+                  </span>
+                </div>
+              </div>
+              <Loader2 className="w-4 h-4 animate-spin text-gray-400 shrink-0" />
+            </div>
+          )}
+        </div>
+      );
+    }
+
     if (!media) return null;
 
     if (loading) {
@@ -342,6 +420,8 @@ export function MessageBubble({
                     <CheckCheck className="w-3.5 h-3.5 text-sky-300" />
                   ) : status === 'delivered' ? (
                     <CheckCheck className="w-3.5 h-3.5 text-white/50" />
+                  ) : status === 'sending' || status === 'uploading' ? (
+                    <Clock className="w-3 h-3 text-white/60" />
                   ) : status === 'failed' ? (
                     <span className="text-red-300 font-bold leading-none select-none text-[12px]" title="Message failed to deliver">!</span>
                   ) : (

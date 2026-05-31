@@ -369,7 +369,7 @@ const sendMessageBody = z.object({
   /** Type of message to send, defaults to text */
   type: z.enum([
     'text', 'image', 'document', 'audio', 'video', 'sticker', 
-    'location', 'contacts', 'interactive', 'template'
+    'location', 'contacts', 'interactive', 'template', 'voice'
   ]).default('text'),
   
   /**
@@ -481,7 +481,20 @@ conversationRouter.openapi(sendMessageRoute, async (c) => {
     bodyLength: body.length,
   });
 
+  let apiType = type;
   let messagePayload = payload ?? (type === 'text' ? { text: { body, preview_url: false } } : {});
+
+  if (type === 'voice') {
+    apiType = 'audio';
+    const voiceData = (payload?.voice || {}) as Record<string, any>;
+    messagePayload = {
+      audio: {
+        id: voiceData.id,
+        voice: true
+      }
+    };
+  }
+
   if (replyWamid) {
     messagePayload = {
       ...messagePayload,
@@ -495,7 +508,7 @@ conversationRouter.openapi(sendMessageRoute, async (c) => {
     phoneNumberId: row.whatsappId,
     accessToken,
     recipientNumber: row.customerNumber,
-    type,
+    type: apiType,
     messagePayload,
   });
 
