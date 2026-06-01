@@ -65,7 +65,7 @@ export function InteractivePicker({ isOpen, onClose, onSelect }: InteractivePick
   }>>([
     {
       headerType: 'image',
-      headerLink: 'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=600&q=80',
+      headerLink: 'https://placehold.co/600x400/128c7e/ffffff.png',
       bodyText: '*Beachfront Villa*\nBeautiful 4-bedroom villa with private pool.',
       buttonType: 'cta_url',
       buttons: [{ id: 'card1_btn1', title: 'Inquire' }],
@@ -74,7 +74,7 @@ export function InteractivePicker({ isOpen, onClose, onSelect }: InteractivePick
     },
     {
       headerType: 'image',
-      headerLink: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=600&q=80',
+      headerLink: 'https://placehold.co/600x400/075e54/ffffff.png',
       bodyText: '*Modern Penthouse*\nLuxury living in the heart of downtown.',
       buttonType: 'cta_url',
       buttons: [{ id: 'card2_btn1', title: 'Inquire' }],
@@ -145,7 +145,7 @@ export function InteractivePicker({ isOpen, onClose, onSelect }: InteractivePick
     if (carouselCards.length >= 10) return;
     setCarouselCards([...carouselCards, {
       headerType: 'image',
-      headerLink: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=80',
+      headerLink: 'https://placehold.co/600x400/34b7f1/ffffff.png',
       bodyText: '*Luxury Estate*\nModern architectural marvel.',
       buttonType: 'cta_url',
       buttons: [{ id: `card_${Date.now()}_btn1`, title: 'Inquire' }],

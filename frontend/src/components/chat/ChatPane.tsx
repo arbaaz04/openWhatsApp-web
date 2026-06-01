@@ -871,6 +871,7 @@ export function ChatPane() {
                   senderName={m.senderName}
                   conversationId={conversationId}
                   media={parsed.media}
+                  interactive={parsed.interactive}
                   replyTo={replyToMessage}
                   onReply={handleReply}
                   avatarInitial="C"
