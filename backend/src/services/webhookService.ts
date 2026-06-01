@@ -197,13 +197,21 @@ export const webhookService = {
           } else if (msg.type === 'document' && msg.document?.id) {
             bodyText = `[MEDIA:document:${msg.document.id}]${msg.document.filename || ''}`;
           } else if (msg.type === 'interactive') {
-            const intType = msg.interactive?.type;
-            if (intType === 'button_reply') {
-              bodyText = msg.interactive?.button_reply?.title || '[Reply Button Clicked]';
-            } else if (intType === 'list_reply') {
-              bodyText = msg.interactive?.list_reply?.title || '[List Item Selected]';
+            const buttonReply = msg.interactive?.button_reply;
+            const listReply = msg.interactive?.list_reply;
+            if (buttonReply) {
+              bodyText = buttonReply.title || '[Reply Button Clicked]';
+            } else if (listReply) {
+              bodyText = listReply.title || '[List Item Selected]';
             } else {
-              bodyText = '[Interactive Message]';
+              const intType = msg.interactive?.type;
+              if (intType === 'button_reply') {
+                bodyText = msg.interactive?.button_reply?.title || '[Reply Button Clicked]';
+              } else if (intType === 'list_reply') {
+                bodyText = msg.interactive?.list_reply?.title || '[List Item Selected]';
+              } else {
+                bodyText = '[Interactive Message]';
+              }
             }
           } else if (msg.type) {
             bodyText = `[${msg.type.charAt(0).toUpperCase() + msg.type.slice(1)} Message]`;
