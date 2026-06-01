@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Paperclip, Smile, Send, X, FileText, Clock, Mic, Trash2, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+// @ts-expect-error - opus-media-recorder does not provide built-in typings
+import OpusMediaRecorder from 'opus-media-recorder';
 
 interface Message {
   id: string;
@@ -83,18 +85,27 @@ export function Composer({
       audioChunksRef.current = [];
       recordingDurationRef.current = 0;
       
-      let mimeType = 'audio/ogg; codecs=opus';
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'audio/webm; codecs=opus';
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
-          mimeType = 'audio/webm';
-        }
+      let recorder: MediaRecorder;
+
+      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/ogg; codecs=opus')) {
+        recorder = new MediaRecorder(stream, { mimeType: 'audio/ogg; codecs=opus' });
+      } else {
+        const workerOptions = {
+          encoderWorkerFactory: () => {
+            const workerCode = `importScripts('https://cdn.jsdelivr.net/npm/opus-media-recorder@0.8.0/encoderWorker.js');`;
+            const blob = new Blob([workerCode], { type: 'application/javascript' });
+            const url = URL.createObjectURL(blob);
+            return new Worker(url);
+          },
+          OggOpusEncoderWasmPath: 'https://cdn.jsdelivr.net/npm/opus-media-recorder@0.8.0/OggOpusEncoder.wasm',
+          WebMOpusEncoderWasmPath: 'https://cdn.jsdelivr.net/npm/opus-media-recorder@0.8.0/WebMOpusEncoder.wasm'
+        };
+        recorder = new OpusMediaRecorder(stream, { mimeType: 'audio/ogg' }, workerOptions) as unknown as MediaRecorder;
       }
 
-      const recorder = new MediaRecorder(stream, { mimeType });
       mediaRecorderRef.current = recorder;
 
-      recorder.ondataavailable = (event) => {
+      recorder.ondataavailable = (event: BlobEvent) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
         }
@@ -103,9 +114,8 @@ export function Composer({
       recorder.onstop = async () => {
         stream.getTracks().forEach((track) => track.stop());
 
-        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-        const ext = mimeType.includes('ogg') ? 'ogg' : 'webm';
-        const file = new File([audioBlob], `voice_note.${ext}`, { type: mimeType });
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/ogg' });
+        const file = new File([audioBlob], `voice_note.ogg`, { type: 'audio/ogg' });
 
         if (audioChunksRef.current.length > 0 && recordingDurationRef.current > 0) {
           setIsUploading(true);
