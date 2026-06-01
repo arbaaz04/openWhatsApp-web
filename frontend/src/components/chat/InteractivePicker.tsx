@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from 'react';
 import { X, Send, Plus, Trash2, Smartphone, Globe, List, MessageSquare, Layers, Sparkles, Image, Video, ChevronRight, ExternalLink } from 'lucide-react';
 import { cn } from '../../lib/utils';

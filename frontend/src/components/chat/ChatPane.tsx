@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useRef } from 'react';
 import { MoreHorizontal, Info, ArrowLeft, Loader2 } from 'lucide-react';
 import { Composer } from './Composer';

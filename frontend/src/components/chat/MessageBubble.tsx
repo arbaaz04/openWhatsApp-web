@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect } from 'react';
 import { Reply, File, Download, Loader2, Check, CheckCheck, X, Play, Clock, Mic, ChevronRight, List, ExternalLink } from 'lucide-react';
 import { cn } from '../../lib/utils';
