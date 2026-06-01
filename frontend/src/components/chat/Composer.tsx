@@ -92,13 +92,10 @@ export function Composer({
       } else {
         const workerOptions = {
           encoderWorkerFactory: () => {
-            const workerCode = `importScripts('https://cdn.jsdelivr.net/npm/opus-media-recorder@0.8.0/encoderWorker.js');`;
-            const blob = new Blob([workerCode], { type: 'application/javascript' });
-            const url = URL.createObjectURL(blob);
-            return new Worker(url);
+            return new Worker('/encoderWorker.js');
           },
-          OggOpusEncoderWasmPath: 'https://cdn.jsdelivr.net/npm/opus-media-recorder@0.8.0/OggOpusEncoder.wasm',
-          WebMOpusEncoderWasmPath: 'https://cdn.jsdelivr.net/npm/opus-media-recorder@0.8.0/WebMOpusEncoder.wasm'
+          OggOpusEncoderWasmPath: '/OggOpusEncoder.wasm',
+          WebMOpusEncoderWasmPath: '/WebMOpusEncoder.wasm'
         };
         recorder = new OpusMediaRecorder(stream, { mimeType: 'audio/ogg' }, workerOptions) as unknown as MediaRecorder;
       }
