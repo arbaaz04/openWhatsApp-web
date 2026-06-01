@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Paperclip, Smile, Send, X, FileText, Clock, Mic, Trash2, Loader2 } from 'lucide-react';
+import { Paperclip, Smile, Send, X, FileText, Clock, Mic, Trash2, Loader2, Sparkles } from 'lucide-react';
 import { cn } from '../../lib/utils';
 // @ts-expect-error - opus-media-recorder does not provide built-in typings
 import OpusMediaRecorder from 'opus-media-recorder';
@@ -21,6 +21,7 @@ interface ComposerProps {
     replyToId?: string
   ) => Promise<void>;
   onToggleTemplates?: () => void;
+  onToggleInteractive?: () => void;
   isExpired?: boolean;
   onTyping?: () => void;
 }
@@ -31,6 +32,7 @@ export function Composer({
   onSend,
   onSendMedia,
   onToggleTemplates,
+  onToggleInteractive,
   isExpired = false,
   onTyping
 }: ComposerProps) {
@@ -375,6 +377,15 @@ export function Composer({
                   >
                     <FileText className="w-4 h-4" />
                     <span className="text-[11px] font-bold">Templates</span>
+                  </button>
+                  <button 
+                    onClick={onToggleInteractive}
+                    className="p-1.5 text-[#128C7E] hover:bg-[#128C7E]/5 rounded transition-colors flex items-center gap-1 cursor-pointer" 
+                    title="WhatsApp Interactive Messages"
+                    disabled={isUploading}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span className="text-[11px] font-bold">Interactive</span>
                   </button>
                 </div>
                 

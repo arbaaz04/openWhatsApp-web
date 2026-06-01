@@ -3,6 +3,7 @@ import { MoreHorizontal, Info, ArrowLeft, Loader2 } from 'lucide-react';
 import { Composer } from './Composer';
 import { MessageBubble } from './MessageBubble';
 import { TemplatePicker } from './TemplatePicker';
+import { InteractivePicker } from './InteractivePicker';
 import { useParams, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../contexts/AuthContext';
@@ -144,6 +145,7 @@ export function ChatPane() {
   const [whatsappId, setWhatsappId] = useState<string>('');
   const [teamId, setTeamId] = useState<string | number>('');
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
+  const [isInteractivePickerOpen, setIsInteractivePickerOpen] = useState(false);
   const [lastCustomerMessageAt, setLastCustomerMessageAt] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
 
@@ -662,6 +664,82 @@ export function ChatPane() {
     }
   };
 
+  const handleSendInteractive = async (interactiveData: { type: 'interactive'; body: string; payload: Record<string, any> }) => {
+    const userId = session?.user?.id;
+    if (!session || !userId || !conversationId) return;
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      const agentName = session?.user?.user_metadata?.full_name || session?.user?.email || 'Agent';
+      sendWsMessage(whatsappId, {
+        type: 'typing',
+        conversationId: parseInt(conversationId, 10),
+        isTyping: false,
+        userId,
+        userName: agentName
+      });
+    }
+
+    const tempId = `temp-${Date.now()}`;
+    const dbBody = interactiveData.body;
+
+    const optimisticMessage: ChatMessage = {
+      id: tempId,
+      body: dbBody,
+      direction: 'outgoing',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: 'sending'
+    };
+
+    setMessages(prev => [...prev, optimisticMessage]);
+    setTimeout(scrollToBottom, 50);
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8787';
+      const res = await fetch(`${apiUrl}/api/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ 
+          body: dbBody,
+          type: 'interactive',
+          payload: interactiveData.payload
+        })
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          const finalMessage: ChatMessage = {
+            id: String(data.messageId),
+            body: dbBody,
+            direction: 'outgoing',
+            time: optimisticMessage.time,
+            externalId: data.wamid || undefined,
+            status: 'sent'
+          };
+          setMessages(prev => prev.map(m => m.id === tempId ? finalMessage : m));
+          putSingleMessage(userId, conversationId, finalMessage);
+        }
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        const errorMsg = errorData.error?.message || errorData.message || 'Failed to send interactive message';
+        alert(`Error: ${errorMsg}`);
+        setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
+      }
+    } catch (err) {
+      console.error('Failed to send interactive message:', err);
+      alert('Error: Network connection failure.');
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full bg-[#F8F9FA]">
       
@@ -823,6 +901,7 @@ export function ChatPane() {
           onSend={handleSendMessage}
           onSendMedia={handleSendMedia}
           onToggleTemplates={() => setIsTemplatePickerOpen(true)}
+          onToggleInteractive={() => setIsInteractivePickerOpen(true)}
           isExpired={isExpired}
           onTyping={handleAgentTyping}
         />
@@ -834,6 +913,12 @@ export function ChatPane() {
         onSelect={handleSendTemplate}
         channelId={whatsappId}
         teamId={teamId}
+      />
+
+      <InteractivePicker
+        isOpen={isInteractivePickerOpen}
+        onClose={() => setIsInteractivePickerOpen(false)}
+        onSelect={handleSendInteractive}
       />
     </div>
   );

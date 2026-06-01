@@ -5,6 +5,7 @@ export interface ParsedMessage {
     id: string;
     caption: string;
   };
+  interactive?: any;
   cleanBody: string;
 }
 
@@ -13,12 +14,14 @@ export interface ParsedMessage {
  * Matches:
  *  - [REPLY:wamid_here] prefix
  *  - [MEDIA:type:id] prefix
- * Sequential matching allows a message to have both a reply context and media.
+ *  - [INTERACTIVE] prefix
+ * Sequential matching allows a message to have reply context, media context, and interactive context.
  */
 export function parseMessageBody(body: string): ParsedMessage {
   let current = body || '';
   let replyToWamid: string | undefined;
   let media: ParsedMessage['media'];
+  let interactive: any;
 
   // 1. Match reply prefix
   const replyMatch = current.match(/^\[REPLY:([^\]]+)\]/);
@@ -39,9 +42,22 @@ export function parseMessageBody(body: string): ParsedMessage {
     media.caption = current; // the rest acts as the caption
   }
 
+  // 3. Match interactive prefix
+  if (current.startsWith('[INTERACTIVE]')) {
+    try {
+      const jsonStr = current.slice('[INTERACTIVE]'.length);
+      interactive = JSON.parse(jsonStr);
+      // Fallback cleanBody for display in notifications, push alerts or chat summaries
+      current = interactive.body?.text || 'Interactive Message';
+    } catch (e) {
+      console.error('Failed to parse interactive payload:', e);
+    }
+  }
+
   return {
     replyToWamid,
     media,
+    interactive,
     cleanBody: current,
   };
 }

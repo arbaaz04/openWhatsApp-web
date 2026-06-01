@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Reply, File, Download, Loader2, Check, CheckCheck, X, Play, Clock, Mic } from 'lucide-react';
+import { Reply, File, Download, Loader2, Check, CheckCheck, X, Play, Clock, Mic, ChevronRight, List, ExternalLink } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../contexts/AuthContext';
 import { VoiceNotePlayer } from './VoiceNotePlayer';
@@ -27,6 +27,7 @@ interface MessageBubbleProps {
     id: string;
     caption: string;
   };
+  interactive?: any;
   status?: 'uploading' | 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | null;
   localFile?: File;
 }
@@ -44,6 +45,7 @@ export function MessageBubble({
   type = 'text',
   conversationId,
   media,
+  interactive,
   status,
   localFile
 }: MessageBubbleProps) {
@@ -394,18 +396,246 @@ export function MessageBubble({
             )}
 
             {body !== 'This message was deleted' && renderMedia()}
-            {body && (
-              <div className={cn(
-                "whitespace-pre-wrap mt-1", 
-                body === 'This message was deleted' && "italic opacity-60 flex items-center gap-1.5 select-none"
-              )}>
-                {body === 'This message was deleted' && (
-                  <svg fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 inline-block shrink-0">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
-                  </svg>
-                )}
-                {body}
-              </div>
+            
+            {/* Native Interactive Message Rendering */}
+            {interactive ? (
+              (() => {
+                const { type: intType, header, body: intBody, footer, action } = interactive;
+                const renderHeader = () => {
+                  if (!header) return null;
+                  if (header.type === 'text' && header.text) {
+                    return <div className="font-bold text-[13px] mb-1.5 text-gray-900 border-b border-gray-100 pb-1">{header.text}</div>;
+                  }
+                  if (header.type === 'image' && header.image?.link) {
+                    return (
+                      <div className="rounded-lg overflow-hidden border border-gray-100/60 shadow-sm max-w-full mb-2">
+                        <img src={header.image.link} className="max-h-[140px] w-full object-cover block" alt="Header media" />
+                      </div>
+                    );
+                  }
+                  if (header.type === 'video' && header.video?.link) {
+                    return (
+                      <div className="rounded-lg overflow-hidden border border-gray-100/60 shadow-sm max-w-full mb-2 relative">
+                        <video src={header.video.link} className="max-h-[140px] w-full object-cover block bg-black" preload="metadata" />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                          <Play className="w-8 h-8 text-white fill-current opacity-85" />
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                };
+
+                switch (intType) {
+                  case 'cta_url': {
+                    const display = action?.parameters?.display_text || 'Visit Link';
+                    const url = action?.parameters?.url || '#';
+                    return (
+                      <div className="flex flex-col min-w-[210px] max-w-xs mt-1 bg-white/90 rounded-lg border border-gray-200/80 shadow-sm overflow-hidden text-left text-gray-900">
+                        <div className="p-3">
+                          {renderHeader()}
+                          <div className="text-[12.5px] text-gray-800 font-medium whitespace-pre-wrap">{intBody?.text}</div>
+                          {footer?.text && <div className="text-[10px] text-gray-400 mt-1 font-semibold">{footer.text}</div>}
+                        </div>
+                        <a 
+                          href={url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="border-t border-gray-100 py-2.5 px-3 flex items-center justify-center gap-1.5 text-[11.5px] font-bold text-sky-600 hover:text-sky-700 bg-sky-50/20 hover:bg-sky-50/40 transition-colors cursor-pointer select-none"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          {display}
+                        </a>
+                      </div>
+                    );
+                  }
+
+                  case 'button': {
+                    const buttons = action?.buttons || [];
+                    return (
+                      <div className="flex flex-col min-w-[210px] max-w-xs mt-1 bg-white/90 rounded-lg border border-gray-200/80 shadow-sm overflow-hidden text-left text-gray-900">
+                        <div className="p-3">
+                          {renderHeader()}
+                          <div className="text-[12.5px] text-gray-800 font-medium whitespace-pre-wrap">{intBody?.text}</div>
+                          {footer?.text && <div className="text-[10px] text-gray-400 mt-1 font-semibold">{footer.text}</div>}
+                        </div>
+                        <div className="border-t border-gray-100 flex flex-col divide-y divide-gray-100 bg-gray-50/10">
+                          {buttons.map((btn: any, idx: number) => (
+                            <button
+                              key={btn.reply?.id || idx}
+                              className="py-2.5 px-3 text-center text-[12px] font-bold text-[#128C7E] hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer"
+                              onClick={() => alert(`Simulated button click: "${btn.reply?.title}" (ID: ${btn.reply?.id})`)}
+                            >
+                              {btn.reply?.title}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  case 'list': {
+                    const sections = action?.sections || [];
+                    const menuButtonText = action?.button || 'Select Option';
+                    return (
+                      <div className="flex flex-col min-w-[210px] max-w-xs mt-1 bg-white/90 rounded-lg border border-gray-200/80 shadow-sm overflow-hidden text-left text-gray-900">
+                        <div className="p-3">
+                          {renderHeader()}
+                          <div className="text-[12.5px] text-gray-800 font-medium whitespace-pre-wrap">{intBody?.text}</div>
+                          {footer?.text && <div className="text-[10px] text-gray-400 mt-1 font-semibold">{footer.text}</div>}
+                        </div>
+                        <div className="border-t border-gray-100">
+                          <div className="p-2 bg-gray-50/50">
+                            <button
+                              onClick={() => {
+                                alert(`Options Menu:\n` + sections.map((s: any) => `* ${s.title || 'Section'}:\n` + s.rows.map((r: any) => `  - ${r.title} (${r.description || ''})`).join('\n')).join('\n'));
+                              }}
+                              className="w-full py-2 px-3 flex items-center justify-between rounded-lg border border-gray-200/60 bg-white shadow-sm hover:bg-gray-50 text-[11.5px] font-bold text-gray-800 hover:text-gray-900 transition-all cursor-pointer active:scale-[0.99]"
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <List className="w-3.5 h-3.5 text-[#128C7E]" />
+                                {menuButtonText}
+                              </span>
+                              <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+                            </button>
+                          </div>
+                          <div className="bg-white px-3 py-2 border-t border-gray-50 flex flex-col gap-1.5 max-h-[140px] overflow-y-auto">
+                            {sections.map((sec: any, sIdx: number) => (
+                              <div key={sIdx} className="flex flex-col">
+                                {sec.title && <div className="text-[9px] uppercase tracking-wider text-gray-400 font-bold mb-1 mt-0.5">{sec.title}</div>}
+                                <div className="flex flex-col gap-1">
+                                  {sec.rows?.map((row: any, rIdx: number) => (
+                                    <div 
+                                      key={row.id || rIdx} 
+                                      onClick={() => alert(`Simulated List click: row ID "${row.id}" ("${row.title}")`)}
+                                      className="p-1.5 hover:bg-[#128C7E]/5 rounded border border-transparent hover:border-[#128C7E]/20 transition-all cursor-pointer flex flex-col"
+                                    >
+                                      <span className="text-[11px] font-bold text-[#128C7E]">{row.title}</span>
+                                      {row.description && <span className="text-[9.5px] text-gray-500 font-medium leading-snug">{row.description}</span>}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  case 'carousel': {
+                    const cards = action?.cards || [];
+                    return (
+                      <div className="flex flex-col max-w-full mt-1 text-left text-gray-900">
+                        {intBody?.text && (
+                          <div className="px-1 py-1 mb-2 text-[12.5px] text-gray-800 font-medium whitespace-pre-wrap">
+                            {intBody.text}
+                          </div>
+                        )}
+                        <div className="flex items-stretch gap-2.5 overflow-x-auto pb-2 scrollbar-thin max-w-[280px] sm:max-w-[400px]">
+                          {cards.map((card: any, idx: number) => {
+                            const cardImg = card.header?.image?.link || card.header?.video?.link;
+                            const cardButtons = card.action?.buttons || [];
+                            const ctaBtn = card.action?.parameters;
+                            
+                            return (
+                              <div 
+                                key={card.card_index ?? idx} 
+                                className="w-[180px] shrink-0 flex flex-col rounded-xl overflow-hidden border border-gray-200/80 bg-white shadow-sm"
+                              >
+                                {cardImg ? (
+                                  <div className="h-[90px] w-full relative bg-gray-50 border-b border-gray-100">
+                                    {card.header?.type === 'video' ? (
+                                      <>
+                                        <video src={cardImg} className="h-full w-full object-cover block bg-black" />
+                                        <div className="absolute inset-0 flex items-center justify-center bg-black/15">
+                                          <Play className="w-5 h-5 text-white fill-current opacity-85" />
+                                        </div>
+                                      </>
+                                    ) : (
+                                      <img src={cardImg} className="h-full w-full object-cover block" alt="Card Header" />
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="h-[90px] w-full bg-gray-100 flex items-center justify-center text-gray-400">
+                                    <File className="w-5 h-5" />
+                                  </div>
+                                )}
+                                
+                                <div className="p-2 flex-1 flex flex-col justify-between">
+                                  <div className="text-[11px] text-gray-800 font-semibold line-clamp-3 leading-snug">
+                                    {card.body?.text}
+                                  </div>
+                                </div>
+
+                                <div className="border-t border-gray-100 flex flex-col divide-y divide-gray-100 bg-gray-50/20">
+                                  {card.type === 'cta_url' && ctaBtn ? (
+                                    <a
+                                      href={ctaBtn.url || '#'}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="py-2 px-2 text-center text-[10px] font-bold text-sky-600 hover:text-sky-700 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                      {ctaBtn.display_text || 'View Link'}
+                                    </a>
+                                  ) : (
+                                    cardButtons.map((btn: any, bIdx: number) => {
+                                      const isQuick = btn.type === 'quick_reply';
+                                      if (isQuick) {
+                                        return (
+                                          <button
+                                            key={btn.quick_reply?.id || bIdx}
+                                            className="py-2 px-2 text-center text-[10.5px] font-bold text-[#128C7E] hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer"
+                                            onClick={() => alert(`Simulated Card click: "${btn.quick_reply?.title}" (ID: ${btn.quick_reply?.id})`)}
+                                          >
+                                            {btn.quick_reply?.title}
+                                          </button>
+                                        );
+                                      } else {
+                                        const cta = btn.cta_url;
+                                        return (
+                                          <a
+                                            key={bIdx}
+                                            href={cta?.url || '#'}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="py-2 px-2 text-center text-[10px] font-bold text-sky-600 hover:text-sky-700 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                                          >
+                                            <ExternalLink className="w-3 h-3" />
+                                            {cta?.display_text || 'Link'}
+                                          </a>
+                                        );
+                                      }
+                                    })
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  default:
+                    return null;
+                }
+              })()
+            ) : (
+              body && (
+                <div className={cn(
+                  "whitespace-pre-wrap mt-1", 
+                  body === 'This message was deleted' && "italic opacity-60 flex items-center gap-1.5 select-none"
+                )}>
+                  {body === 'This message was deleted' && (
+                    <svg fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 inline-block shrink-0">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+                    </svg>
+                  )}
+                  {body}
+                </div>
+              )
             )}
             
             {/* Inline Timestamp */}

@@ -196,6 +196,15 @@ export const webhookService = {
             bodyText = `[MEDIA:audio:${msg.audio.id}]`;
           } else if (msg.type === 'document' && msg.document?.id) {
             bodyText = `[MEDIA:document:${msg.document.id}]${msg.document.filename || ''}`;
+          } else if (msg.type === 'interactive') {
+            const intType = msg.interactive?.type;
+            if (intType === 'button_reply') {
+              bodyText = msg.interactive?.button_reply?.title || '[Reply Button Clicked]';
+            } else if (intType === 'list_reply') {
+              bodyText = msg.interactive?.list_reply?.title || '[List Item Selected]';
+            } else {
+              bodyText = '[Interactive Message]';
+            }
           } else if (msg.type) {
             bodyText = `[${msg.type.charAt(0).toUpperCase() + msg.type.slice(1)} Message]`;
           }

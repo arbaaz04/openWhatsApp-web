@@ -226,4 +226,50 @@ describe('Webhook Service — Payload Processing', () => {
     expect(messageRepository.revokeMessage).toHaveBeenCalledWith(db, 'wamid-to-delete-123');
     expect(messageRepository.processIncomingMessage).not.toHaveBeenCalled();
   });
+
+  it('should extract text from interactive button_reply and list_reply selections', async () => {
+    const payload = basePayload();
+    payload.entry[0].changes[0].value.messages = [
+      {
+        from: 'cust456',
+        id: 'msg-btn-reply',
+        timestamp: '1234567890',
+        type: 'interactive',
+        interactive: {
+          type: 'button_reply',
+          button_reply: { id: 'btn_yes', title: 'Yes, register me' },
+        },
+      } as any,
+      {
+        from: 'cust456',
+        id: 'msg-list-reply',
+        timestamp: '1234567890',
+        type: 'interactive',
+        interactive: {
+          type: 'list_reply',
+          list_reply: { id: 'row_1', title: 'Consultation', description: 'Schedule a call' },
+        },
+      } as any,
+    ];
+
+    await webhookService.processPayload(db, payload);
+
+    expect(messageRepository.processIncomingMessage).toHaveBeenCalledTimes(2);
+    expect(messageRepository.processIncomingMessage).toHaveBeenNthCalledWith(
+      1,
+      db,
+      'host123',
+      'cust456',
+      'Yes, register me',
+      'msg-btn-reply'
+    );
+    expect(messageRepository.processIncomingMessage).toHaveBeenNthCalledWith(
+      2,
+      db,
+      'host123',
+      'cust456',
+      'Consultation',
+      'msg-list-reply'
+    );
+  });
 });
