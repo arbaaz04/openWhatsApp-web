@@ -12,8 +12,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  detect-changes:
+    name: Check Changed Files
+    runs-on: ubuntu-24.04
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      website: ${{ steps.filter.outputs.website }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+            website:
+              - 'website/**'
+
   backend-lint:
     name: Backend Lint
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -30,6 +52,8 @@ jobs:
 
   frontend-lint:
     name: Frontend Lint
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -44,8 +68,28 @@ jobs:
       - run: npm install --no-audit
       - run: npm run lint
 
+  website-lint:
+    name: Website Lint
+    needs: detect-changes
+    if: needs.detect-changes.outputs.website == 'true'
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: website/package-lock.json
+      - run: npm install --no-audit
+      - run: npm run lint
+
   backend-audit:
     name: Backend Security Audit
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -62,6 +106,8 @@ jobs:
 
   frontend-audit:
     name: Frontend Security Audit
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -76,10 +122,29 @@ jobs:
       - run: npm install --no-audit
       - run: npm audit --audit-level=high
 
+  website-audit:
+    name: Website Security Audit
+    needs: detect-changes
+    if: needs.detect-changes.outputs.website == 'true'
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: website/package-lock.json
+      - run: npm install --no-audit
+      - run: npm audit --audit-level=high
+
   test:
     name: Tests
     runs-on: ubuntu-24.04
-    needs: [backend-lint]
+    needs: [detect-changes, backend-lint]
+    if: needs.detect-changes.outputs.backend == 'true'
     defaults:
       run:
         working-directory: backend
@@ -91,4 +156,4 @@ jobs:
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
       - run: npm install --no-audit --legacy-peer-deps
-      - run: npx vitest run --reporter=verbose --coverage
+      - run: npm run test

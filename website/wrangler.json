@@ -1,0 +1,75 @@
+{
+  "name": "whatflow-web-website",
+  "account_id": "4f1f004b2eace5ca5b30dec4a2b9c90d",
+  "compatibility_date": "2024-04-10",
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "persist": true,
+      "invocation_logs": true
+    },
+    "traces": {
+      "enabled": true,
+      "persist": true,
+      "head_sampling_rate": 1
+    }
+  },
+  "main": "worker.ts",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "env": {
+    "production": {
+      "name": "whatflow-web-website-production",
+      "routes": [
+        { "pattern": "PROD_WEBSITE_HOST", "custom_domain": true }
+      ],
+      "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "persist": true,
+          "invocation_logs": true
+        },
+        "traces": {
+          "enabled": true,
+          "persist": true,
+          "head_sampling_rate": 1
+        }
+      },
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
+    },
+    "development": {
+      "name": "whatflow-web-website-development",
+      "routes": [
+        { "pattern": "DEV_WEBSITE_HOST", "custom_domain": true }
+      ],
+      "observability": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "persist": true,
+          "invocation_logs": true
+        },
+        "traces": {
+          "enabled": true,
+          "persist": true,
+          "head_sampling_rate": 1
+        }
+      },
+      "vars": {
+        "ENVIRONMENT": "development"
+      }
+    }
+  }
+}

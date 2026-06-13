@@ -5,8 +5,30 @@ on:
       - production
 
 jobs:
+  detect-changes:
+    name: Check Changed Files
+    runs-on: ubuntu-24.04
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      website: ${{ steps.filter.outputs.website }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+            website:
+              - 'website/**'
+
   backend-lint:
     name: Backend Lint
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -23,6 +45,8 @@ jobs:
 
   frontend-lint:
     name: Frontend Lint
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -37,8 +61,28 @@ jobs:
       - run: npm install --no-audit
       - run: npm run lint
 
+  website-lint:
+    name: Website Lint
+    needs: detect-changes
+    if: needs.detect-changes.outputs.website == 'true'
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm install --no-audit
+      - run: npm run lint
+
   backend-audit:
     name: Backend Security Audit
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -55,6 +99,8 @@ jobs:
 
   frontend-audit:
     name: Frontend Security Audit
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -69,10 +115,29 @@ jobs:
       - run: npm install --no-audit
       - run: npm audit --audit-level=high
 
+  website-audit:
+    name: Website Security Audit
+    needs: detect-changes
+    if: needs.detect-changes.outputs.website == 'true'
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm install --no-audit
+      - run: npm audit --audit-level=high
+
   test:
     name: Tests
     runs-on: ubuntu-24.04
-    needs: [backend-lint]
+    needs: [detect-changes, backend-lint]
+    if: needs.detect-changes.outputs.backend == 'true'
     defaults:
       run:
         working-directory: backend
@@ -89,7 +154,8 @@ jobs:
   deploy:
     name: Deploy Backend (Production)
     runs-on: ubuntu-24.04
-    needs: [backend-lint, backend-audit, test]
+    needs: [detect-changes, backend-lint, backend-audit, test]
+    if: needs.detect-changes.outputs.backend == 'true'
     environment: production
     permissions:
       contents: read
@@ -193,7 +259,8 @@ jobs:
   deploy-frontend:
     name: Deploy Frontend (Production)
     runs-on: ubuntu-24.04
-    needs: [frontend-lint, frontend-audit]
+    needs: [detect-changes, frontend-lint, frontend-audit]
+    if: needs.detect-changes.outputs.frontend == 'true'
     environment: production
     permissions:
       contents: read
@@ -243,6 +310,46 @@ jobs:
             --var ENVIRONMENT:${{ vars.ENVIRONMENT }} \
             --var APP_BACKEND_URL:https://${{ vars.APP_BACKEND_URL }} \
             --var APP_FRONTEND_URL:https://${{ vars.APP_FRONTEND_URL }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+  deploy-website:
+    name: Deploy Website (Production)
+    runs-on: ubuntu-24.04
+    needs: [detect-changes, website-lint, website-audit]
+    if: needs.detect-changes.outputs.website == 'true'
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: |
+          cd website
+          npm install --no-audit
+
+      - name: Build Website
+        working-directory: ./website
+        env:
+          VITE_APP_URL: https://${{ vars.APP_FRONTEND_URL }}
+        run: npm run build
+
+      - name: Patch Custom Domains (Production)
+        working-directory: ./website
+        run: |
+          sed -i 's/PROD_WEBSITE_HOST/${{ vars.WEBSITE_URL }}/g' wrangler.json
+
+      - name: Deploy Website
+        working-directory: ./website
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --env production \
+            --var ENVIRONMENT:${{ vars.ENVIRONMENT }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
