@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WhatFlow — Premium WhatsApp Business Shared Inbox & Marketing Platform</title>
+    <title>WhatFlow</title>
     <meta name="description" content="Streamline your team's WhatsApp communications. Real-time shared team inbox, native interactive messages builder, template campaigns, and audio messaging for modern customer relationships." />
     
     <!-- SEO Optimization -->
@@ -14,14 +14,25 @@
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     
-    <!-- Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "WhatFlow",
+      "operatingSystem": "All",
+      "applicationCategory": "BusinessApplication",
+      "description": "Premium WhatsApp Business Shared Inbox & Marketing Platform to build interactive flows, run shared team inbox, and automate WhatsApp conversations at scale.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
     
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
-  <body class="bg-slate-950 text-slate-100 antialiased selection:bg-teal-500/30 selection:text-teal-200">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

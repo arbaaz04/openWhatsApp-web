@@ -1,0 +1,25 @@
+# WhatFlow
+
+WhatFlow is a developer-first platform designed to automate WhatsApp Business communications. It offers tools to build interactive conversation flows, manage shared team inboxes, and integrate custom workflows via official Meta WhatsApp Business Cloud APIs.
+
+## Overview
+WhatFlow allows businesses and developers to scale their customer relationships on WhatsApp. By wrapping Meta's official API, it provides a high-performance infrastructure with real-time analytics, sandbox testing, webhook logs, and automated interactive message templates.
+
+## Key Features
+
+- **Shared Team Inbox**: A collaborative dashboard allowing multiple agents to manage customer queries from a single official WhatsApp number. Supports ticket assignment, routing, and internal notes.
+- **Interactive Message Builder**: Easily build WhatsApp interactive message formats (CTA links, 10-option list menus, quick reply buttons, and media carousels) natively.
+- **Voice & Automation Workflows**: Build no-code triggers, route conversations automatically, and dispatch webhooks to sync data with CRMs.
+- **First-Class Developer Sandbox**: A sandbox mode (+1 555 867 5309) for testing custom integrations and webhooks instantly without production setup.
+- **Real-Time API & Webhook logs**: Complete audit trail showing response status, payloads, latencies, and retries.
+- **End-to-End Privacy**: Built natively on the official Meta WhatsApp Business Cloud API, guaranteeing security and data privacy.
+
+## Target Audience
+- **Developers & Engineers**: Looking to deploy official WhatsApp business flows without complex setups.
+- **Support Teams & Agents**: Looking to consolidate chat management.
+- **E-commerce Businesses**: Integrates natively with Shopify via the official WhatFlow Shopify App for sales recovery, order updates, and marketing automation.
+
+## Links & Portals
+- **Documentation**: https://docs.whatflow.io
+- **Web App**: https://app.whatflow.io
+- **Shopify App**: https://apps.shopify.com/whatflow-official-api

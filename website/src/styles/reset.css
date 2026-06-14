@@ -1,0 +1,59 @@
+/* ── RESET ── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  font-size: 16px;
+}
+
+body {
+  font-family: var(--font-whatsapp-sans-var);
+  font-weight: var(--font-weight-regular);
+  background-color: var(--color-cream-canvas);
+  color: var(--color-charcoal);
+  line-height: var(--leading-body);
+  font-size: var(--text-body);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+button {
+  font-family: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-whatsapp-sans-var);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink-black);
+}
+
+/* ── ROOT ── */
+.wf-root {
+  min-height: 100vh;
+  background: var(--color-cream-canvas);
+}
+
+/* ════════════════════════════════
+   NAVBAR
+════════════════════════════════ */
