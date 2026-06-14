@@ -97,10 +97,26 @@
 .wf-mobile-menu {
   display: flex;
   flex-direction: column;
-  padding: var(--spacing-16) var(--spacing-32) var(--spacing-24);
+  padding: 0 var(--spacing-32);
   gap: var(--spacing-8);
-  border-top: 1px solid var(--color-pale-blue-wash);
+  border-top: 1px solid transparent;
   background: var(--color-cream-canvas);
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: max-height 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.28s ease,
+              padding 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.28s ease;
+}
+
+.wf-mobile-menu.open {
+  max-height: 420px;
+  opacity: 1;
+  pointer-events: auto;
+  border-top-color: var(--color-pale-blue-wash);
+  padding: var(--spacing-16) var(--spacing-32) var(--spacing-24);
 }
 
 .wf-mobile-link {
@@ -109,12 +125,38 @@
   color: var(--color-charcoal);
   padding: var(--spacing-8) 0;
   border-bottom: 1px solid var(--color-pale-blue-wash);
+  opacity: 0;
+  transform: translateX(-12px);
+  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+.wf-mobile-menu.open .wf-mobile-link {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.wf-mobile-menu.open .wf-mobile-link:nth-child(1) { transition-delay: 0.04s; }
+.wf-mobile-menu.open .wf-mobile-link:nth-child(2) { transition-delay: 0.08s; }
+.wf-mobile-menu.open .wf-mobile-link:nth-child(3) { transition-delay: 0.12s; }
+.wf-mobile-menu.open .wf-mobile-link:nth-child(4) { transition-delay: 0.16s; }
 
 .wf-mobile-cta {
   margin-top: var(--spacing-16);
   text-align: center;
+  opacity: 0;
+  transform: translateX(-12px);
+  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+.wf-mobile-menu.open .wf-mobile-cta {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.wf-mobile-menu.open .wf-mobile-cta:nth-of-type(1) { transition-delay: 0.2s; }
+.wf-mobile-menu.open .wf-mobile-cta:nth-of-type(2) { transition-delay: 0.24s; }
 
 /* ── BUTTONS ── */
 

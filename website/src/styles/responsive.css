@@ -87,19 +87,38 @@
     margin-left: 0;
   }
 
-  .wf-float-3,
-  .wf-float-4 {
-    display: none;
+  /* Stack floating chat bubbles vertically on mobile to form a clean chat thread */
+  .wf-bubbles-section {
+    min-height: auto;
+    padding: var(--section-gap) 1.5rem;
+  }
+
+  .wf-floating-bubbles {
+    position: relative;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    align-items: center;
+    margin-top: 2rem;
+  }
+
+  .wf-float-item {
+    position: static !important;
+    width: 100%;
+    max-width: 380px;
+    justify-content: flex-start;
+    display: flex !important; /* Force all bubbles to remain visible on mobile */
+  }
+
+  .wf-float-item.wf-reveal {
+    transform: scale(0.95) translateY(20px);
   }
 }
 
 @media (max-width: 480px) {
   .wf-footer-cols {
     grid-template-columns: 1fr;
-  }
-
-  .wf-float-2 {
-    display: none;
   }
 
   .wf-blog-cards {

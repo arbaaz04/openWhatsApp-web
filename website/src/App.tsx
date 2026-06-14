@@ -169,16 +169,14 @@ export default function App({ page }: { page?: 'privacy' | 'terms' | 'pricing' }
         </div>
 
         {/* Mobile menu */}
-        {mobileMenuOpen && (
-          <div className="wf-mobile-menu">
-            <Link to="/#features" className="wf-mobile-link" onClick={() => setMobileMenuOpen(false)}>Features</Link>
-            <Link to="/#interactive" className="wf-mobile-link" onClick={() => setMobileMenuOpen(false)}>Interactive Messages</Link>
-            <Link to="/#developer" className="wf-mobile-link" onClick={() => setMobileMenuOpen(false)}>Developers</Link>
-            <Link to="/pricing" className="wf-mobile-link" onClick={() => setMobileMenuOpen(false)}>Pricing</Link>
-            <a href={shopifyAppUrl} target="_blank" rel="noopener noreferrer" className="wf-btn wf-btn-outline wf-mobile-cta" style={{ marginBottom: '12px' }} onClick={() => setMobileMenuOpen(false)}>Shopify App</a>
-            <a href={webAppUrl} target="_blank" rel="noopener noreferrer" className="wf-btn wf-btn-primary wf-mobile-cta" onClick={() => setMobileMenuOpen(false)}>Web App</a>
-          </div>
-        )}
+        <div className={`wf-mobile-menu ${mobileMenuOpen ? 'open' : ''}`}>
+          <Link to="/#features" className="wf-mobile-link" onClick={() => setMobileMenuOpen(false)}>Features</Link>
+          <Link to="/#interactive" className="wf-mobile-link" onClick={() => setMobileMenuOpen(false)}>Interactive Messages</Link>
+          <Link to="/#developer" className="wf-mobile-link" onClick={() => setMobileMenuOpen(false)}>Developers</Link>
+          <Link to="/pricing" className="wf-mobile-link" onClick={() => setMobileMenuOpen(false)}>Pricing</Link>
+          <a href={shopifyAppUrl} target="_blank" rel="noopener noreferrer" className="wf-btn wf-btn-outline wf-mobile-cta" style={{ marginBottom: '12px' }} onClick={() => setMobileMenuOpen(false)}>Shopify App</a>
+          <a href={webAppUrl} target="_blank" rel="noopener noreferrer" className="wf-btn wf-btn-primary wf-mobile-cta" onClick={() => setMobileMenuOpen(false)}>Web App</a>
+        </div>
       </header>
 
       {!page ? (
