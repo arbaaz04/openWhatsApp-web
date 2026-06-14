@@ -127,7 +127,7 @@ export default function App({ page }: { page?: 'privacy' | 'terms' | 'pricing' }
     setActiveTab(tab);
     setMsgIdCounter(3);
     const base: Message[] = [{ id: '1', sender: 'bot', text: 'Welcome to WhatFlow! Select a component below to see live previews.', time: '10:00 AM' }];
-    let newMessages = [...base];
+    const newMessages = [...base];
     if (tab === 'cta') newMessages.push({ id: '2', sender: 'bot', type: 'cta', data: { title: 'Launch Your WhatsApp App', body: 'Integrate the Meta Cloud API in minutes.', footer: 'WhatFlow API Engine', buttonText: 'Open Documentation', url: 'https://docs.whatflow.io' }, time: '10:01 AM' });
     else if (tab === 'list') newMessages.push({ id: '2', sender: 'bot', type: 'list', data: { title: 'Choose Your Department', body: 'Select a division to route your conversation to the correct team.', footer: 'Powered by WhatFlow Workflows', actionText: 'View Departments', sections: [{ title: 'Support & Tech', rows: [{ id: 'tech', title: 'Technical Support', desc: 'Resolve code, API, and webhook issues' }, { id: 'billing', title: 'Billing & Plans', desc: 'Invoices, limits, and upgrades' }] }, { title: 'Business', rows: [{ id: 'sales', title: 'Talk to Sales', desc: 'Enterprise volumes and Custom SLAs' }] }] }, time: '10:01 AM' });
     else if (tab === 'buttons') newMessages.push({ id: '2', sender: 'bot', type: 'buttons', data: { title: 'Quick RSVP', body: 'Are you attending the WhatFlow Developer Webinar tomorrow at 3 PM UTC?', footer: 'Event Confirmation', buttons: ['Yes, definitely', 'Maybe later', 'Send info'] }, time: '10:01 AM' });
