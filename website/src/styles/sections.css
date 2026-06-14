@@ -12,6 +12,7 @@
 .wf-header--scrolled {
   border-bottom-color: rgba(17, 27, 33, 0.08);
   background: var(--color-cream-canvas);
+  border-bottom: 1px solid;
 }
 
 .wf-nav-inner {
@@ -276,6 +277,7 @@
   0% {
     transform: translateY(0);
   }
+
   100% {
     transform: translateY(-8px);
   }
@@ -351,10 +353,21 @@
 }
 
 /* Staggered delay helpers */
-.wf-reveal-delay-1 { transition-delay: 0.1s; }
-.wf-reveal-delay-2 { transition-delay: 0.25s; }
-.wf-reveal-delay-3 { transition-delay: 0.4s; }
-.wf-reveal-delay-4 { transition-delay: 0.55s; }
+.wf-reveal-delay-1 {
+  transition-delay: 0.1s;
+}
+
+.wf-reveal-delay-2 {
+  transition-delay: 0.25s;
+}
+
+.wf-reveal-delay-3 {
+  transition-delay: 0.4s;
+}
+
+.wf-reveal-delay-4 {
+  transition-delay: 0.55s;
+}
 
 /* Inner float details (separate wrapper to prevent scale transition collisions) */
 .wf-float-inner {
@@ -363,30 +376,61 @@
   gap: var(--spacing-12);
 }
 
-.wf-float-inner-1 { animation: floatBubble1 5.5s ease-in-out infinite alternate; }
-.wf-float-inner-2 { animation: floatBubble2 6.5s ease-in-out infinite alternate; }
-.wf-float-inner-3 { animation: floatBubble3 6s ease-in-out infinite alternate; }
-.wf-float-inner-4 { animation: floatBubble4 7s ease-in-out infinite alternate; }
+.wf-float-inner-1 {
+  animation: floatBubble1 5.5s ease-in-out infinite alternate;
+}
+
+.wf-float-inner-2 {
+  animation: floatBubble2 6.5s ease-in-out infinite alternate;
+}
+
+.wf-float-inner-3 {
+  animation: floatBubble3 6s ease-in-out infinite alternate;
+}
+
+.wf-float-inner-4 {
+  animation: floatBubble4 7s ease-in-out infinite alternate;
+}
 
 /* Dynamic float ranges (more prominent up/down) */
 @keyframes floatBubble1 {
-  0% { transform: translateY(0px); }
-  100% { transform: translateY(-28px); }
+  0% {
+    transform: translateY(0px);
+  }
+
+  100% {
+    transform: translateY(-28px);
+  }
 }
 
 @keyframes floatBubble2 {
-  0% { transform: translateY(0px); }
-  100% { transform: translateY(-20px); }
+  0% {
+    transform: translateY(0px);
+  }
+
+  100% {
+    transform: translateY(-20px);
+  }
 }
 
 @keyframes floatBubble3 {
-  0% { transform: translateY(0px); }
-  100% { transform: translateY(-26px); }
+  0% {
+    transform: translateY(0px);
+  }
+
+  100% {
+    transform: translateY(-26px);
+  }
 }
 
 @keyframes floatBubble4 {
-  0% { transform: translateY(0px); }
-  100% { transform: translateY(-22px); }
+  0% {
+    transform: translateY(0px);
+  }
+
+  100% {
+    transform: translateY(-22px);
+  }
 }
 
 .wf-float-avatar {
@@ -475,8 +519,10 @@
   width: 100%;
   max-width: 480px;
   aspect-ratio: 4 / 3;
-  border-radius: var(--radius-images); /* 25px */
-  overflow: visible; /* Let chat bubbles overlap the edges */
+  border-radius: var(--radius-images);
+  /* 25px */
+  overflow: visible;
+  /* Let chat bubbles overlap the edges */
 }
 
 .wf-card-photo {
@@ -597,56 +643,78 @@
     transform: translateY(-14px) rotate(-12deg);
     color: rgba(255, 255, 255, 0.35);
   }
+
   30% {
-    transform: translateY(1px) rotate(1deg); /* slight over-travel */
+    transform: translateY(1px) rotate(1deg);
+    /* slight over-travel */
     color: rgba(255, 255, 255, 0.35);
   }
-  38%, 100% {
+
+  38%,
+  100% {
     transform: translateY(0) rotate(0);
     color: var(--color-whatsapp-green);
   }
 }
 
 @keyframes lockBodyOnce {
-  0%, 30% {
+
+  0%,
+  30% {
     transform: scale(1);
     color: rgba(255, 255, 255, 0.35);
     fill: rgba(255, 255, 255, 0.03);
   }
+
   32% {
-    transform: scale(0.92, 0.95); /* squash on impact */
+    transform: scale(0.92, 0.95);
+    /* squash on impact */
   }
+
   38% {
-    transform: scale(1.03, 1.02); /* rebound stretch */
+    transform: scale(1.03, 1.02);
+    /* rebound stretch */
   }
-  44%, 100% {
+
+  44%,
+  100% {
     transform: scale(1);
     color: var(--color-whatsapp-green);
-    fill: rgba(37, 211, 102, 0.05); /* tint green in secure state */
+    fill: rgba(37, 211, 102, 0.05);
+    /* tint green in secure state */
   }
 }
 
 @keyframes lockCheckOnce {
-  0%, 42% {
+
+  0%,
+  42% {
     stroke-dashoffset: 50;
     opacity: 0;
   }
-  60%, 100% {
+
+  60%,
+  100% {
     stroke-dashoffset: 0;
     opacity: 1;
   }
 }
 
 @keyframes lockRippleOnce {
-  0%, 30% {
+
+  0%,
+  30% {
     transform: scale(0.5);
     opacity: 0;
     stroke-width: 2;
   }
+
   32% {
     opacity: 0.8;
   }
-  65%, 100% {
+
+  65%,
+  100% {
     transform: scale(3.5);
     opacity: 0;
     stroke-width: 0.5;
@@ -842,18 +910,24 @@
   height: 22px;
   letter-spacing: -0.1px;
 }
+
 .wf-pm-time {
-  font-size: 9.5px; /* Increase size to match visual weight of icons */
+  font-size: 9.5px;
+  /* Increase size to match visual weight of icons */
   line-height: 1;
-  transform: translateY(2px); /* Push down slightly to align vertically with the icons */
-  margin-left: 9px; /* Shift time towards the right away from the left curve */
+  transform: translateY(2px);
+  /* Push down slightly to align vertically with the icons */
+  margin-left: 9px;
+  /* Shift time towards the right away from the left curve */
 }
 
 .wf-pm-status-icons {
   display: flex;
   align-items: center;
-  gap: 2px; /* Very tight spacing matching native iOS status bar */
-  transform: translateY(1.2px); /* Align perfectly in line with time */
+  gap: 2px;
+  /* Very tight spacing matching native iOS status bar */
+  transform: translateY(1.2px);
+  /* Align perfectly in line with time */
 }
 
 .wf-pm-status-icons svg {
@@ -1724,142 +1798,263 @@
 .wf-pricing-page {
   min-height: 100vh;
   background: var(--color-cream-canvas);
-  padding: calc(var(--nav-h) + 3.5rem) 2rem 6rem;
+  padding: calc(var(--nav-h) + 4rem) 2rem 6rem;
+}
+
+.wf-pricing-badge {
+  display: inline-block;
+  padding: 6px 16px;
+  background: rgba(37, 211, 102, 0.12);
+  color: var(--color-whatsapp-green);
+  font-size: var(--text-caption);
+  font-weight: var(--font-weight-bold);
+  border-radius: var(--radius-full);
+  margin-bottom: var(--spacing-16);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .wf-pricing-hero {
   max-width: var(--page-max-width);
   margin: 0 auto 3rem;
-  padding: 3.5rem 3rem;
-  background: var(--color-pure-white);
-  border-radius: 25px;
-  display: grid;
-  gap: 1.5rem;
-  border: 1px solid var(--color-pale-blue-wash);
+  padding: 2rem 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
 }
 
-.wf-pricing-hero-copy {
-  max-width: 720px;
-}
-
-.wf-eyebrow {
-  display: none;
-}
-
-.wf-pricing-hero h1 {
-  font-size: clamp(42px, 5vw, 54px);
-  font-weight: 500;
+.wf-pricing-title {
+  font-size: clamp(38px, 6vw, 68px);
+  font-weight: var(--font-weight-bold);
   color: var(--color-ink-black);
-  margin-bottom: var(--spacing-16);
-  line-height: var(--leading-display);
+  margin: 0 0 var(--spacing-16) 0;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
 }
 
-.wf-pricing-hero p {
+.wf-pricing-desc {
   font-size: var(--text-body-lg);
   line-height: var(--leading-body-lg);
   color: var(--color-charcoal);
   max-width: 680px;
-}
-
-.wf-pricing-hero-actions {
-  display: none;
+  margin: 0 auto;
 }
 
 .wf-pricing-grid-section {
   max-width: var(--page-max-width);
-  margin: 0 auto;
+  margin: 0 auto 8rem;
 }
 
 .wf-pricing-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.5rem;
-  align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 2rem;
+  align-items: stretch;
 }
 
 .wf-pricing-card {
   background: var(--color-pure-white);
-  border-radius: 25px;
-  padding: 30px;
+  border-radius: var(--radius-images);
+  padding: 40px var(--card-padding);
   border: 1px solid var(--color-pale-blue-wash);
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  position: relative;
+  transition: transform 0.3s, border-color 0.3s;
+}
+
+.wf-pricing-card:hover {
+  transform: translateY(-4px);
 }
 
 .wf-pricing-card--featured {
   border-color: var(--color-whatsapp-green);
-  background: rgba(234, 249, 226, 0.65);
+  border-width: 2px;
+}
+
+.wf-featured-ribbon {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: var(--color-whatsapp-green);
+  color: var(--color-pure-white);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .wf-pricing-card-header {
-  display: grid;
-  gap: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: var(--spacing-24);
 }
 
 .wf-pricing-card-tier {
-  font-size: 0.85rem;
+  font-size: 1.35rem;
   font-weight: var(--font-weight-bold);
-  color: var(--color-charcoal);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-}
-
-.wf-pricing-card-tag {
-  display: inline-flex;
-  padding: 8px 16px;
-  border-radius: 50px;
-  background: var(--color-whatsapp-green);
-  color: var(--color-pure-white);
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  font-weight: var(--font-weight-bold);
-  margin-top: -4px;
+  color: var(--color-ink-black);
+  margin: 0 0 var(--spacing-8) 0;
 }
 
 .wf-pricing-card-price {
-  font-size: clamp(2rem, 4vw, 2.5rem);
-  font-weight: 700;
+  font-size: clamp(2.5rem, 5vw, 3.5rem);
+  font-weight: var(--font-weight-bold);
   color: var(--color-ink-black);
   margin: 0;
+  display: flex;
+  align-items: baseline;
+}
+
+.wf-pricing-period {
+  font-size: 1.15rem;
+  font-weight: var(--font-weight-regular);
+  color: var(--color-warm-gray);
+}
+
+.wf-pricing-period-sub {
+  font-size: var(--text-caption);
+  color: var(--color-warm-gray);
+  margin-bottom: var(--spacing-16);
+}
+
+.wf-pricing-card-desc {
+  font-size: 15px;
+  color: var(--color-warm-gray);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.wf-pricing-divider {
+  border: none;
+  border-top: 1px solid var(--color-pale-blue-wash);
+  margin: 0 0 var(--spacing-24) 0;
 }
 
 .wf-pricing-card-features {
   list-style: none;
   padding: 0;
-  margin: 0;
-  display: grid;
-  gap: 0.9rem;
+  margin: 0 0 var(--spacing-32) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
 }
 
-.wf-pricing-card-features li {
-  position: relative;
-  padding-left: 1.6rem;
+.wf-pricing-feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-12);
+  font-size: 15px;
   color: var(--color-charcoal);
-  line-height: 1.6;
+  line-height: 1.4;
 }
 
-.wf-pricing-card-features li::before {
-  content: '•';
-  position: absolute;
-  left: 0;
-  top: 0;
-  color: var(--color-whatsapp-green);
+.wf-check-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .wf-pricing-card-cta {
   margin-top: auto;
-  align-self: start;
+  width: 100%;
+  text-align: center;
+  box-sizing: border-box;
 }
 
-.wf-pricing-note {
+/* FAQ Conversational Chat Bubbles */
+.wf-faq-chat-section {
+  max-width: 720px;
+  margin: 0 auto 8rem;
+}
+
+.wf-faq-chat-header {
+  text-align: center;
+  margin-bottom: var(--spacing-40);
+}
+
+.wf-faq-chat-header h2 {
+  font-size: clamp(28px, 4vw, 36px);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink-black);
+  margin-bottom: var(--spacing-8);
+}
+
+.wf-faq-chat-header p {
+  font-size: var(--text-body-lg);
+  color: var(--color-warm-gray);
+}
+
+.wf-faq-chat-container {
+  background: #efeae2; /* WhatsApp chat room canvas backdrop */
+  background-image: radial-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 0);
+  background-size: 20px 20px;
+  padding: var(--spacing-32);
+  border-radius: var(--radius-images);
+  border: 1px solid var(--color-pale-blue-wash);
+}
+
+.wf-faq-chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-28);
+}
+
+.wf-faq-chat-pair {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-12);
+}
+
+.wf-faq-bubble-in {
+  align-self: flex-start;
+  max-width: 85%;
+}
+
+.wf-faq-bubble-out {
+  align-self: flex-end;
+  max-width: 85%;
+}
+
+/* Partner and pricing notes */
+.wf-pricing-partner-note {
   max-width: var(--page-max-width);
-  margin: 3rem auto 0;
-  padding: 2rem;
+  margin: 0 auto;
+  padding: 40px;
   text-align: center;
   background: var(--color-pure-white);
-  border-radius: var(--radius-cards);
+  border-radius: var(--radius-images);
   border: 1px solid var(--color-pale-blue-wash);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-16);
+}
+
+.wf-meta-partner-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  background: rgba(3, 115, 233, 0.08);
+  color: var(--color-link-blue);
+  font-size: 13px;
+  font-weight: var(--font-weight-bold);
+}
+
+.wf-partner-meta-icon {
+  flex-shrink: 0;
+}
+
+.wf-pricing-partner-note p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-warm-gray);
+  max-width: 800px;
+  margin: 0;
 }
 
 .wf-footer-bottom {
