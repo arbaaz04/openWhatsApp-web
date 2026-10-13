@@ -1,8 +1,8 @@
-# WhatFlow
+# openWhatsApp
 
 **Developer-first WhatsApp Business infrastructure on the edge.**
 
-WhatFlow is an open-source, multi-tenant backend that lets teams connect their WhatsApp Business accounts, receive and reply to messages in real time, and build automations — all running on Cloudflare's global edge network.
+openWhatsApp is an open-source, multi-tenant backend that lets teams connect their WhatsApp Business accounts, receive and reply to messages in real time, and build automations — all running on Cloudflare's global edge network.
 
 ---
 
@@ -23,7 +23,7 @@ WhatFlow is an open-source, multi-tenant backend that lets teams connect their W
 ## Monorepo layout
 
 ```
-whatflow-web/
+openWhatsApp/
 ├── backend/      Cloudflare Worker (Hono + Drizzle + Supabase)
 ├── frontend/     React app (Vite)  — in development
 └── .github/
